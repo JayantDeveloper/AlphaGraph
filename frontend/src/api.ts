@@ -71,6 +71,14 @@ export type AttemptRecord = {
 export type RunSnapshot = {
   run_id: string;
   brief: string;
+  dataset_label: string | null;
+  dataset_summary: {
+    label: string;
+    row_count: number;
+    ticker_count: number;
+    start_date: string;
+    end_date: string;
+  } | null;
   status: string;
   phase: RunPhase;
   attempt: number;
@@ -86,20 +94,63 @@ export type RunSnapshot = {
 
 async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    try {
+      const payload = (await response.json()) as { detail?: string };
+      throw new Error(payload.detail ?? `Request failed with status ${response.status}`);
+    } catch {
+      throw new Error(`Request failed with status ${response.status}`);
+    }
   }
   return (await response.json()) as T;
 }
 
-export async function createRun(): Promise<RunSnapshot> {
-  const response = await fetch("/runs", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({}),
-  });
+export async function createRun(options?: {
+  brief?: string;
+  datasetFile?: File | null;
+}): Promise<RunSnapshot> {
+  const brief = options?.brief?.trim();
+  const datasetFile = options?.datasetFile ?? null;
+
+  const response = datasetFile || brief
+    ? await fetch("/runs", {
+        method: "POST",
+        body: (() => {
+          const payload = new FormData();
+          if (brief) payload.append("brief", brief);
+          if (datasetFile) payload.append("dataset", datasetFile);
+          return payload;
+        })(),
+      })
+    : await fetch("/runs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
   return parseJson<RunSnapshot>(response);
+}
+
+export type KaggleDataset = {
+  ref: string;
+  title: string;
+  subtitle: string;
+  url: string;
+  size_bytes: number;
+  last_updated: string;
+  vote_count: number;
+  download_count: number;
+};
+
+export async function suggestDatasets(query: string): Promise<KaggleDataset[]> {
+  try {
+    const response = await fetch(`/datasets/suggest?query=${encodeURIComponent(query)}`);
+    if (!response.ok) return [];
+    const data = (await response.json()) as { datasets: KaggleDataset[] };
+    return data.datasets ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export async function approveRun(runId: string, approved: boolean): Promise<RunSnapshot> {

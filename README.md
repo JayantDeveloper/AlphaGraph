@@ -81,7 +81,18 @@ cd frontend
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173` and click `Run Demo`.
+Open `http://127.0.0.1:5173`, upload a CSV if you want, and click `Run Research`.
+
+## Input Flow
+
+AlphaGraph now supports one CSV upload per run.
+
+- Upload a long-format CSV with required columns: `date`, `ticker`, `close`
+- Optional columns: `open`, `high`, `low`, `volume`
+- Enter a research brief such as `test 5-day reversal`
+- Start the run and inspect the factor, generated code, metrics, critique, and final artifacts
+
+If no CSV is uploaded, AlphaGraph falls back to the bundled demo dataset.
 
 ## Demo Flow
 

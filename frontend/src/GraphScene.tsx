@@ -2,6 +2,10 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import type { RunSnapshot, WorkflowNode } from "./api";
 
+import geminiLogo   from "../model-logos-square/gemini.webp";
+import claudeLogo   from "../model-logos-square/claude.webp";
+import deepseekLogo from "../model-logos-square/deepseek.webp";
+
 // ─── Node definitions ─────────────────────────────────────────────────────────
 
 interface NodeMeta {
@@ -24,9 +28,9 @@ const NODES: NodeMeta[] = [
     typeLabel: "ORCHESTRATOR",
     provider: null,
     model: "deterministic",
-    color: "#2dd4bf",
-    activeTopBg: "#0e2628",
-    activeBotBg: "#0a1e22",
+    color: "#9CD5FF",
+    activeTopBg: "#0e1e30",
+    activeBotBg: "#091522",
   },
   {
     id: "hypothesis_agent",
@@ -36,8 +40,8 @@ const NODES: NodeMeta[] = [
     provider: "Google",
     model: "gemini-2.5-flash",
     color: "#4285f4",
-    activeTopBg: "#132040",
-    activeBotBg: "#0d1827",
+    activeTopBg: "#0d1c3a",
+    activeBotBg: "#081426",
   },
   {
     id: "coding_agent",
@@ -47,8 +51,8 @@ const NODES: NodeMeta[] = [
     provider: "Anthropic",
     model: "claude-sonnet-4-20250514",
     color: "#fb923c",
-    activeTopBg: "#221208",
-    activeBotBg: "#160e08",
+    activeTopBg: "#201208",
+    activeBotBg: "#150d06",
   },
   {
     id: "execution_tool",
@@ -57,9 +61,9 @@ const NODES: NodeMeta[] = [
     typeLabel: "SYSTEM TOOL",
     provider: null,
     model: "local subprocess",
-    color: "#64748b",
-    activeTopBg: "#141c2a",
-    activeBotBg: "#0e151e",
+    color: "#7AAACE",
+    activeTopBg: "#111e2e",
+    activeBotBg: "#0c1520",
   },
   {
     id: "factor_critic",
@@ -69,8 +73,8 @@ const NODES: NodeMeta[] = [
     provider: "DeepSeek",
     model: "deepseek-reasoner",
     color: "#a78bfa",
-    activeTopBg: "#160d2e",
-    activeBotBg: "#0e0b1e",
+    activeTopBg: "#130d2e",
+    activeBotBg: "#0b091e",
   },
   {
     id: "human_in_the_loop",
@@ -80,8 +84,8 @@ const NODES: NodeMeta[] = [
     provider: null,
     model: "interrupt()",
     color: "#fbbf24",
-    activeTopBg: "#1e1500",
-    activeBotBg: "#150f00",
+    activeTopBg: "#1c1500",
+    activeBotBg: "#120f00",
   },
   {
     id: "finalize_run",
@@ -91,8 +95,8 @@ const NODES: NodeMeta[] = [
     provider: null,
     model: "artifact writer",
     color: "#4ade80",
-    activeTopBg: "#0d2415",
-    activeBotBg: "#081a0e",
+    activeTopBg: "#0a1e13",
+    activeBotBg: "#07160e",
   },
 ];
 
@@ -130,20 +134,20 @@ function fmtMetric(v: number | string): string {
 //
 //  Revision arc: Critic top → raised amber arc above top row → Hypothesis top
 
-const NW = 120;   // node width
-const NH = 66;    // node height
-const HW = NW / 2;
-const HH = NH / 2;
-const NR = 9;     // corner radius
+const NW = 200;   // node width  (~1.67× the original 120)
+const NH = 110;   // node height (~1.67× the original 66)
+const HW = NW / 2;  // 100
+const HH = NH / 2;  // 55
+const NR = 12;    // corner radius
 
-const R1Y = 110;  // row 1 center y
-const R2Y = 256;  // row 2 center y
+const R1Y = 114;  // row 1 center y
+const R2Y = 274;  // row 2 center y
 
-// Column x-centers: 4 equally-spaced columns
-const C1 = 74;
-const C2 = 232;
-const C3 = 390;
-const C4 = 548;
+// Column x-centers: 4 equally-spaced columns (80 px gap between nodes)
+const C1 = 120;
+const C2 = 400;
+const C3 = 680;
+const C4 = 960;
 
 const NODE_POS: Record<WorkflowNode, [number, number]> = {
   supervisor:        [C1, R1Y],
@@ -165,13 +169,41 @@ const EDGES: Array<{ from: WorkflowNode; to: WorkflowNode; label: string; dir: "
   { from: "human_in_the_loop", to: "finalize_run",      label: "approved",    dir: "l" },
 ];
 
-const SVG_W = 626;
-const SVG_H = 326;
-const ARC_Y  = 30;  // revision arc peak y (above row 1 tops at R1Y-HH=77)
-const GRAPH_SCALE = 0.75;
-const GRAPH_OFFSET_X = 112;
-const GRAPH_OFFSET_Y = 34;
-const ROW_LABEL_X = 22;
+const SVG_W = 1080;
+const SVG_H = 352;
+const ARC_Y  = 40;  // revision arc peak y (above row 1 tops at R1Y-HH=59)
+
+// ─── Provider Logo Icons (actual images) ─────────────────────────────────────
+
+const LOGO_MAP: Partial<Record<string, string>> = {
+  hypothesis_agent: geminiLogo,
+  coding_agent:     claudeLogo,
+  factor_critic:    deepseekLogo,
+};
+
+function renderProviderLogo(nodeId: string, lx: number, ly: number) {
+  const src = LOGO_MAP[nodeId];
+  if (!src) return null;
+  const S = 22;
+  // clip ID unique per node so multiple renders don't collide
+  const clipId = `logo-clip-${nodeId}`;
+  return (
+    <g>
+      <defs>
+        <clipPath id={clipId}>
+          <rect x={lx} y={ly} width={S} height={S} rx={5.5} ry={5.5}/>
+        </clipPath>
+      </defs>
+      <image
+        href={src}
+        x={lx} y={ly}
+        width={S} height={S}
+        clipPath={`url(#${clipId})`}
+        preserveAspectRatio="xMidYMid slice"
+      />
+    </g>
+  );
+}
 
 // ─── SVG Diagram ─────────────────────────────────────────────────────────────
 
@@ -206,8 +238,10 @@ function DiagramSVG({
       style={{
         display: "block",
         width: "100%",
+        maxWidth: SVG_W,
         height: "auto",
         userSelect: "none",
+        margin: "0 auto",
       }}
     >
       <defs>
@@ -221,16 +255,16 @@ function DiagramSVG({
 
         {/* ── Glow filter (used by active nodes) ── */}
         <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="b" />
+          <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b" />
           <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
 
         {/* ── Arrow markers ── */}
         {[
-          { id: "arr-dim",      fill: "#1e2d45" },
-          { id: "arr-lit",      fill: "#2dd4bf" },
-          { id: "arr-done",     fill: "#4ade80" },
-          { id: "arr-rev",      fill: "#fbbf24" },
+          { id: "arr-dim",  fill: "#1e3550" },
+          { id: "arr-lit",  fill: "#9CD5FF" },
+          { id: "arr-done", fill: "#4ade80" },
+          { id: "arr-rev",  fill: "#fbbf24" },
         ].map(({ id, fill }) => (
           <marker key={id} id={id} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
             <path d="M 0,0 L 8,4 L 0,8 Z" fill={fill} />
@@ -244,16 +278,16 @@ function DiagramSVG({
 
         {/* ── CSS animations injected into SVG ── */}
         <style>{`
-          .edge-flow { stroke-dasharray: 10 7; animation: flow 1s linear infinite; }
-          @keyframes flow { to { stroke-dashoffset: -17; } }
+          .edge-flow { stroke-dasharray: 12 8; animation: flow 1s linear infinite; }
+          @keyframes flow { to { stroke-dashoffset: -20; } }
           .pulse-ring { animation: pulse 2s ease-out infinite; }
-          @keyframes pulse { 0%,100%{opacity:0.5;r:7} 50%{opacity:0;r:14} }
-          .rev-dash { stroke-dasharray: 8 6; animation: rev-flow 1.2s linear infinite; }
-          @keyframes rev-flow { to { stroke-dashoffset: -14; } }
+          @keyframes pulse { 0%,100%{opacity:0.5;r:10} 50%{opacity:0;r:20} }
+          .rev-dash { stroke-dasharray: 10 7; animation: rev-flow 1.2s linear infinite; }
+          @keyframes rev-flow { to { stroke-dashoffset: -17; } }
         `}</style>
       </defs>
 
-      <g transform={`translate(${GRAPH_OFFSET_X} ${GRAPH_OFFSET_Y}) scale(${GRAPH_SCALE})`}>
+      <g>
         {/* ══ FORWARD EDGES ═════════════════════════════════════════════════════ */}
         {EDGES.map(({ from, to, label, dir }) => {
         const [fx, fy] = NODE_POS[from];
@@ -268,21 +302,21 @@ function DiagramSVG({
         else { x1 = fx; y1 = fy + HH; x2 = tx; y2 = ty - HH; }
 
         const midX = (x1 + x2) / 2;
-        const midY = dir === "d" ? (y1 + y2) / 2 : fy - 7;
+        const midY = dir === "d" ? (y1 + y2) / 2 : fy - 9;
         const labelAnchor = dir === "d" ? "start" : "middle";
-        const labelDx = dir === "d" ? 8 : 0;
+        const labelDx = dir === "d" ? 10 : 0;
 
         const color =
           es === "traversed" ? "#4ade80" :
-          es === "active"    ? "#2dd4bf" :
-          highlighted        ? "#3d5a7a" :
-          "#1a2540";
+          es === "active"    ? "#9CD5FF" :
+          highlighted        ? "#4a6a9a" :
+          "#2a3f60";
 
         const markerId =
           es === "traversed" ? "url(#arr-done)" :
           es === "active"    ? "url(#arr-lit)"  : "url(#arr-dim)";
 
-        const sw = (es !== "pending" || highlighted) ? 2.2 : 1.6;
+        const sw = (es !== "pending" || highlighted) ? 2.5 : 1.8;
 
           return (
             <g key={`${from}-${to}`}>
@@ -296,13 +330,13 @@ function DiagramSVG({
               {label && (
                 <text
                   x={midX + labelDx} y={midY}
-                  fontSize="7"
+                  fontSize="9"
                   textAnchor={labelAnchor}
                   fontFamily="'JetBrains Mono', monospace"
                   fill={
                     es === "traversed" ? "#4ade8088" :
-                    es === "active"    ? "#2dd4bf99" :
-                    "#2a3b55"
+                    es === "active"    ? "#9CD5FFaa" :
+                    "#4a6288"
                   }
                 >
                   {label}
@@ -316,22 +350,31 @@ function DiagramSVG({
         {/* Always render (shows topology), brightens when used */}
         <g>
           <path
-            d={`M ${C4},${R2Y - HH} C ${C4 + 44},${ARC_Y} ${C2 - 24},${ARC_Y} ${C2},${R1Y - HH}`}
+            d={`M ${C4},${R2Y - HH} C ${C4 + 60},${ARC_Y} ${C2 - 50},${ARC_Y} ${C2},${R1Y - HH}`}
             fill="none"
-            stroke={revisionActive ? "#fbbf24" : "#3a2800"}
-            strokeWidth={revisionActive ? 2.3 : 1.5}
-            strokeDasharray={revisionActive ? undefined : "6 5"}
+            stroke={revisionActive ? "#fde047" : "#b45309"}
+            strokeWidth={revisionActive ? 4 : 2.2}
+            strokeDasharray={revisionActive ? undefined : "7 6"}
             markerEnd={revisionActive ? "url(#arr-rev-left)" : undefined}
             className={revisionActive ? "rev-dash" : undefined}
-            opacity={revisionActive ? 1 : 0.6}
+          />
+          {/* Label pill — positioned at bezier midpoint (t≈0.5 → x≈680, y≈65) */}
+          <rect
+            x={(C4 + C2) / 2 - 57}
+            y={50}
+            width={114}
+            height={15}
+            rx={4}
+            fill="rgba(11,21,32,0.88)"
           />
           <text
             x={(C4 + C2) / 2}
-            y={ARC_Y - 9}
-            fontSize="7"
+            y={61}
+            fontSize="11"
+            fontWeight="600"
             textAnchor="middle"
             fontFamily="Inter, system-ui, sans-serif"
-            fill={revisionActive ? "#fbbf2499" : "#3a2800"}
+            fill={revisionActive ? "#fde047" : "#d97706"}
           >
             revision guidance
           </text>
@@ -349,15 +392,15 @@ function DiagramSVG({
         // ── Colors based on state ──
         const bgFill =
           state === "active"   ? `url(#bg-${node.id})` :
-          state === "complete" ? "#0d2115" :
-          isHovered            ? "#181f2e" :
-          "#111827";
+          state === "complete" ? "#0a1e15" :
+          isHovered            ? "#142336" :
+          "#0f1e2e";
 
         const borderColor =
           state === "active"   ? node.color :
           state === "complete" ? "#1a5c2a" :
-          isHovered            ? "#2a3b5c" :
-          "#1a2540";
+          isHovered            ? "#355872" :
+          "#1e3550";
 
         const borderWidth = state === "active" ? 1.5 : 1;
 
@@ -367,20 +410,20 @@ function DiagramSVG({
           isHovered            ? 0.5  : 0.3;
 
         const titleColor =
-          state === "active"   ? "#f0f6ff" :
-          state === "complete" ? "#bbf7d0" :
-          isHovered            ? "#f0f6ff" :
-          "#dbe7f3";
+          state === "active"   ? "#F7F8F0" :
+          state === "complete" ? "#a0e8c4" :
+          isHovered            ? "#F7F8F0" :
+          "#d8e8f4";
 
         const metaColor =
           state === "active"   ? node.color :
           state === "complete" ? "#4ade80"  :
-          "#8ea2bb";
+          "#7AAACE";
 
         const typeLabelColor =
           state === "active"   ? node.color :
           state === "complete" ? "#4ade80"  :
-          "#9fb4cd";
+          "#7AAACE";
 
           return (
             <g
@@ -394,8 +437,8 @@ function DiagramSVG({
             {/* ── Active pulse ring ── */}
             {state === "active" && (
               <rect
-                x={nx - 5} y={ny - 5}
-                width={NW + 10} height={NH + 10}
+                x={nx - 6} y={ny - 6}
+                width={NW + 12} height={NH + 12}
                 rx={NR + 4}
                 fill="none"
                 stroke={node.color}
@@ -407,8 +450,8 @@ function DiagramSVG({
             {/* ── Selection outline ── */}
             {isSelected && (
               <rect
-                x={nx - 3} y={ny - 3}
-                width={NW + 6} height={NH + 6}
+                x={nx - 4} y={ny - 4}
+                width={NW + 8} height={NH + 8}
                 rx={NR + 2}
                 fill="none"
                 stroke="#2dd4bf"
@@ -430,16 +473,16 @@ function DiagramSVG({
             {/* ── Left accent bar ── */}
             <rect
               x={nx} y={ny}
-              width={3} height={NH}
-              rx={1.5}
+              width={4} height={NH}
+              rx={2}
               fill={node.color}
               opacity={accentOpacity}
             />
 
             {/* ── Type label ── */}
             <text
-              x={nx + 12} y={ny + 15}
-              fontSize="7"
+              x={nx + 20} y={ny + 25}
+              fontSize="11"
               fontWeight="700"
               letterSpacing="0.1em"
               fontFamily="Inter, system-ui, sans-serif"
@@ -448,32 +491,13 @@ function DiagramSVG({
               {node.typeLabel}
             </text>
 
-            {/* ── Provider badge (AI agents only) ── */}
-            {node.provider && (
-              <g>
-                <rect
-                  x={nx + NW - 60} y={ny + 7}
-                  width={54} height={13} rx={6.5}
-                  fill={node.color}
-                  opacity={state === "pending" ? 0.12 : 0.22}
-                />
-                <text
-                  x={nx + NW - 33} y={ny + 16.5}
-                  fontSize="7"
-                  textAnchor="middle"
-                  fontFamily="Inter, system-ui, sans-serif"
-                  fill={node.color}
-                  opacity={state === "pending" ? 0.6 : 0.95}
-                >
-                  {node.provider}
-                </text>
-              </g>
-            )}
+            {/* ── Provider logo (AI agents only) ── */}
+            {node.provider && renderProviderLogo(node.id, nx + NW - 30, ny + 10)}
 
             {/* ── Node name ── */}
             <text
-              x={nx + 12} y={ny + 32}
-              fontSize="13"
+              x={nx + 20} y={ny + 53}
+              fontSize="22"
               fontWeight="600"
               letterSpacing="-0.01em"
               fontFamily="Inter, system-ui, sans-serif"
@@ -484,8 +508,8 @@ function DiagramSVG({
 
             {/* ── Model line ── */}
             <text
-              x={nx + 12} y={ny + 49}
-              fontSize="8.5"
+              x={nx + 20} y={ny + 80}
+              fontSize="12"
               fontFamily="'JetBrains Mono', 'Fira Mono', monospace"
               fill={metaColor}
             >
@@ -495,8 +519,8 @@ function DiagramSVG({
             {/* ── Status indicator ── */}
             {state === "active" && (
               <>
-                <circle cx={nx + NW - 13} cy={cy} r={4} fill={node.color} />
-                <circle cx={nx + NW - 13} cy={cy} r={4}
+                <circle cx={nx + NW - 20} cy={ny + NH - 20} r={6} fill={node.color} />
+                <circle cx={nx + NW - 20} cy={ny + NH - 20} r={6}
                   fill="none" stroke={node.color} strokeWidth={1}
                   className="pulse-ring"
                 />
@@ -504,8 +528,8 @@ function DiagramSVG({
             )}
             {state === "complete" && (
               <text
-                x={nx + NW - 13} y={cy + 5}
-                fontSize="13"
+                x={nx + NW - 20} y={ny + NH - 13}
+                fontSize="18"
                 textAnchor="middle"
                 fontFamily="Inter, system-ui, sans-serif"
                 fill="#4ade80"
@@ -519,12 +543,14 @@ function DiagramSVG({
       </g>
 
       {/* ── Row labels ── */}
-      <text x={ROW_LABEL_X} y={GRAPH_OFFSET_Y + (R1Y * GRAPH_SCALE) + 4} fontSize="7" fontWeight="700" letterSpacing="0.12em"
-        fontFamily="Inter, system-ui, sans-serif" fill="#e6edf3">
+      <text x="12" y={R1Y} fontSize="12" fontWeight="700" letterSpacing="0.1em"
+        fontFamily="Inter, system-ui, sans-serif" fill="#F7F8F0" textAnchor="middle"
+        transform={`rotate(-90,12,${R1Y})`}>
         RESEARCH
       </text>
-      <text x={ROW_LABEL_X} y={GRAPH_OFFSET_Y + (R2Y * GRAPH_SCALE) + 4} fontSize="7" fontWeight="700" letterSpacing="0.12em"
-        fontFamily="Inter, system-ui, sans-serif" fill="#e6edf3">
+      <text x="12" y={R2Y} fontSize="12" fontWeight="700" letterSpacing="0.1em"
+        fontFamily="Inter, system-ui, sans-serif" fill="#F7F8F0" textAnchor="middle"
+        transform={`rotate(-90,12,${R2Y})`}>
         REVIEW
       </text>
     </svg>
@@ -647,9 +673,9 @@ export function WorkflowGraphView({ snapshot }: { snapshot: RunSnapshot | null }
           borderTop: "1px solid var(--border)",
         }}>
           {[
-            { bg: "#111827", border: "#1a2540", label: "Pending" },
-            { bg: "#0e2628", border: "#2dd4bf", label: "Active" },
-            { bg: "#0d2115", border: "#1a5c2a", label: "Complete" },
+            { bg: "#2a4462", border: "#355872", label: "Pending" },
+            { bg: "#9CD5FF", border: "#9CD5FF", label: "Active" },
+            { bg: "#4ade80", border: "#4ade80", label: "Complete" },
           ].map(({ bg, border, label }) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{ width: 12, height: 12, borderRadius: 3, background: bg, border: `1px solid ${border}`, flexShrink: 0 }} />
@@ -657,8 +683,8 @@ export function WorkflowGraphView({ snapshot }: { snapshot: RunSnapshot | null }
             </div>
           ))}
           {[
-            { color: "#4285f4", label: "Google / Gemini" },
-            { color: "#fb923c", label: "Anthropic / Claude" },
+            { color: "#4285f4", label: "Gemini (Google)" },
+            { color: "#fb923c", label: "Claude (Anthropic)" },
             { color: "#a78bfa", label: "DeepSeek" },
           ].map(({ color, label }) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>

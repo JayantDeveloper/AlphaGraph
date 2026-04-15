@@ -22,6 +22,8 @@ from alphagraph.schemas import (
     FactorSpec,
     GeneratedCode,
     HypothesisOutput,
+    NeutralizationMode,
+    StrategyConfig,
 )
 
 
@@ -149,7 +151,12 @@ class DemoLLMProvider:
                 "Generated a minimal backtest script that runs the factor through "
                 "the fixed AlphaGraph harness."
             ),
-            script=_script_template(factor_spec.expression),
+            script=_script_template(
+                StrategyConfig(
+                    expression=factor_spec.expression,
+                    neutralization=NeutralizationMode.NONE,
+                )
+            ),
         )
 
     def generate_critique(
@@ -458,7 +465,15 @@ class ProviderBackedCodingAgent:
             factor_spec=hypothesis.factor_spec,
             attempt_number=attempt_number,
         )
-        return CodegenOutput(generated_code=generated_code)
+        strategy_config = StrategyConfig(
+            expression=hypothesis.factor_spec.expression,
+            neutralization=NeutralizationMode.NONE,
+        )
+        generated_code.script = _script_template(strategy_config)
+        return CodegenOutput(
+            strategy_config=strategy_config,
+            generated_code=generated_code,
+        )
 
 
 class ProviderBackedFactorCritic:
@@ -507,7 +522,6 @@ def build_agent_routes_from_env(env: Mapping[str, str] | None = None) -> AgentRo
 
 
 def build_default_agent_suite(prompt_dir: Path) -> AgentSuite:
-    _load_local_dotenv(prompt_dir.parents[3] / ".env")
     env = os.environ
     routes = build_agent_routes_from_env(env)
 
@@ -715,17 +729,7 @@ def _extract_json_payload(raw: str) -> dict[str, Any]:
         if isinstance(payload, dict):
             return payload
     raise ValueError("Model response did not contain a valid JSON object.")
-
-
-def _load_local_dotenv(path: Path) -> None:
-    try:
-        from dotenv import load_dotenv
-    except Exception:
-        return
-    load_dotenv(path, override=False)
-
-
-def _script_template(expression: str) -> str:
+def _script_template(config: StrategyConfig) -> str:
     return f"""from pathlib import Path
 import os
 
@@ -734,7 +738,15 @@ from alphagraph.runtime.backtest_engine import run_backtest_from_expression
 
 dataset_path = Path(os.environ[\"ALPHAGRAPH_DATASET_PATH\"])
 output_path = Path(os.environ[\"ALPHAGRAPH_OUTPUT_PATH\"])
-result = run_backtest_from_expression(dataset_path, {expression!r})
+result = run_backtest_from_expression(
+    dataset_path,
+    {config.expression!r},
+    neutralization={config.neutralization.value!r},
+    transaction_cost_bps={config.transaction_cost_bps},
+    long_quantile={config.long_quantile},
+    short_quantile={config.short_quantile},
+    is_ratio={config.is_ratio},
+)
 output_path.write_text(result.model_dump_json(indent=2))
-print(\"executed factor {expression}\")
+print(\"executed factor {config.expression}\")
 """

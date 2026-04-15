@@ -9,6 +9,7 @@ export default defineConfig({
     host: "0.0.0.0",
     proxy: {
       "/runs": "http://127.0.0.1:8000",
+      "/datasets": "http://127.0.0.1:8000",
     },
   },
 });

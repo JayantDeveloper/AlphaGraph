@@ -8,14 +8,22 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 from alphagraph.graph.nodes import (
+    code_fix,
+    generate_candidates,
     human_in_the_loop,
-    make_coding_node,
-    make_execution_tool_node,
-    make_factor_critic_node,
+    ingest_brief,
+    ingest_dataset,
+    make_evaluate_results_node,
+    make_execute_backtest_node,
     make_finalize_node,
-    make_hypothesis_node,
-    route_after_supervisor,
-    supervisor,
+    make_generate_code_node,
+    make_validate_dataset_node,
+    parse_research_plan,
+    revise_factor,
+    route_after_candidate_selection,
+    route_after_dataset_validation,
+    route_next_candidate,
+    route_post_evaluation,
 )
 from alphagraph.graph.state import RunState
 from alphagraph.llm.provider import AgentSuite, LLMProvider, build_agent_suite
@@ -45,30 +53,58 @@ def create_workflow(provider: LLMProvider | AgentSuite, base_dir: Path) -> Workf
     agent_suite = provider if isinstance(provider, AgentSuite) else build_agent_suite(provider)
 
     builder = StateGraph(RunState)
-    builder.add_node("supervisor", supervisor)
-    builder.add_node("hypothesis_agent", make_hypothesis_node(agent_suite))
-    builder.add_node("coding_agent", make_coding_node(agent_suite))
-    builder.add_node("execution_tool", make_execution_tool_node(runner))
-    builder.add_node("factor_critic", make_factor_critic_node(agent_suite, artifact_store))
-    builder.add_node("human_in_the_loop", human_in_the_loop)
+    builder.add_node("ingest_brief", ingest_brief)
+    builder.add_node("ingest_dataset", ingest_dataset)
+    builder.add_node("validate_dataset", make_validate_dataset_node(artifact_store))
+    builder.add_node("parse_research_plan", parse_research_plan)
+    builder.add_node("generate_candidates", generate_candidates)
+    builder.add_node("route_next_candidate", route_next_candidate)
+    builder.add_node("generate_code", make_generate_code_node(agent_suite))
+    builder.add_node("execute_backtest", make_execute_backtest_node(runner))
+    builder.add_node("evaluate_results", make_evaluate_results_node(agent_suite, artifact_store))
+    builder.add_node("code_fix", code_fix)
+    builder.add_node("revise_factor", revise_factor)
+    builder.add_node("human_review", human_in_the_loop)
     builder.add_node("finalize_run", make_finalize_node(artifact_store))
 
-    builder.add_edge(START, "supervisor")
+    builder.add_edge(START, "ingest_brief")
+    builder.add_edge("ingest_brief", "ingest_dataset")
+    builder.add_edge("ingest_dataset", "validate_dataset")
     builder.add_conditional_edges(
-        "supervisor",
-        route_after_supervisor,
+        "validate_dataset",
+        route_after_dataset_validation,
         {
-            "run_hypothesis": "hypothesis_agent",
-            "run_human_review": "human_in_the_loop",
+            "parse_research_plan": "parse_research_plan",
             "finalize": "finalize_run",
-            "stop": END,
         },
     )
-    builder.add_edge("hypothesis_agent", "coding_agent")
-    builder.add_edge("coding_agent", "execution_tool")
-    builder.add_edge("execution_tool", "factor_critic")
-    builder.add_edge("factor_critic", "supervisor")
-    builder.add_edge("human_in_the_loop", "supervisor")
+    builder.add_edge("parse_research_plan", "generate_candidates")
+    builder.add_edge("generate_candidates", "route_next_candidate")
+    builder.add_conditional_edges(
+        "route_next_candidate",
+        route_after_candidate_selection,
+        {
+            "generate_code": "generate_code",
+            "human_review": "human_review",
+            "finalize": "finalize_run",
+        },
+    )
+    builder.add_edge("generate_code", "execute_backtest")
+    builder.add_edge("execute_backtest", "evaluate_results")
+    builder.add_conditional_edges(
+        "evaluate_results",
+        route_post_evaluation,
+        {
+            "code_fix": "code_fix",
+            "revise_factor": "revise_factor",
+            "route_next_candidate": "route_next_candidate",
+            "human_review": "human_review",
+            "finalize": "finalize_run",
+        },
+    )
+    builder.add_edge("code_fix", "generate_code")
+    builder.add_edge("revise_factor", "generate_code")
+    builder.add_edge("human_review", "finalize_run")
     builder.add_edge("finalize_run", END)
 
     return WorkflowRuntime(

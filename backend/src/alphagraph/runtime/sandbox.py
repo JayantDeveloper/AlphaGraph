@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from alphagraph.schemas import ExecutionResult, GeneratedCode
@@ -23,6 +24,7 @@ class SandboxRunner:
         generated_code: GeneratedCode,
         dataset_path: Path,
     ) -> tuple[ExecutionResult, dict[str, str]]:
+        started = time.perf_counter()
         code_path = self.artifact_store.write_generated_code(
             run_id,
             attempt_number,
@@ -48,6 +50,8 @@ class SandboxRunner:
                 success=False,
                 stdout=process.stdout,
                 stderr=process.stderr,
+                traceback=process.stderr,
+                runtime_seconds=round(time.perf_counter() - started, 6),
                 artifact_path=str(code_path),
             )
         elif not output_path.exists():
@@ -55,12 +59,15 @@ class SandboxRunner:
                 success=False,
                 stdout=process.stdout,
                 stderr="Sandbox did not write an output payload.",
+                runtime_seconds=round(time.perf_counter() - started, 6),
                 artifact_path=str(code_path),
             )
         else:
             execution = ExecutionResult.model_validate_json(output_path.read_text())
             execution.stdout = process.stdout
             execution.stderr = process.stderr
+            if execution.runtime_seconds is None:
+                execution.runtime_seconds = round(time.perf_counter() - started, 6)
             execution.artifact_path = str(code_path)
 
         execution_path = self.artifact_store.write_execution_result(

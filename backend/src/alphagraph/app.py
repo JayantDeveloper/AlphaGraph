@@ -18,6 +18,7 @@ def create_app(
     run_mode: str = "inline",
 ) -> FastAPI:
     resolved_base_dir = base_dir or Path(__file__).resolve().parents[3]
+    _load_local_dotenv(resolved_base_dir / ".env")
     resolved_dataset_path = dataset_path or resolved_base_dir / "backend" / "data" / "prices.csv"
     prompt_dir = Path(__file__).resolve().parent / "prompts"
     workflow = create_workflow(build_default_agent_suite(prompt_dir), resolved_base_dir)
@@ -44,3 +45,11 @@ def create_app(
     app.state.service = service
     app.include_router(router)
     return app
+
+
+def _load_local_dotenv(path: Path) -> None:
+    try:
+        from dotenv import load_dotenv
+    except Exception:
+        return
+    load_dotenv(path, override=False)

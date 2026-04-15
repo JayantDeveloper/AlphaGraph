@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from alphagraph.schemas import AttemptRecord, RunSnapshot
+import pandas as pd
+
+from alphagraph.schemas import AttemptRecord, PackageType, RunSnapshot
 
 
 class ArtifactStore:
@@ -14,6 +16,21 @@ class ArtifactStore:
     def attempt_dir(self, run_id: str, attempt_number: int) -> Path:
         path = self.root / run_id / f"attempt-{attempt_number}"
         path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def run_dir(self, run_id: str) -> Path:
+        path = self.root / run_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def write_raw_uploaded_dataset(self, run_id: str, filename: str, content: bytes) -> Path:
+        path = self.run_dir(run_id) / filename
+        path.write_bytes(content)
+        return path
+
+    def write_normalized_dataset(self, run_id: str, frame: pd.DataFrame) -> Path:
+        path = self.run_dir(run_id) / "normalized_dataset.csv"
+        frame.to_csv(path, index=False)
         return path
 
     def write_generated_code(
@@ -47,8 +64,12 @@ class ArtifactStore:
         path.write_text(attempt.model_dump_json(indent=2))
         return path
 
-    def write_final_report(self, snapshot: RunSnapshot) -> Path:
-        path = self.root / snapshot.run_id / "final_report.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
+    def write_package(self, snapshot: RunSnapshot) -> Path:
+        filename = (
+            "research_package.json"
+            if snapshot.package_type == PackageType.RESEARCH_PACKAGE
+            else "failed_run_package.json"
+        )
+        path = self.run_dir(snapshot.run_id) / filename
         path.write_text(snapshot.model_dump_json(indent=2))
         return path
