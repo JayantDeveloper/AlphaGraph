@@ -6,88 +6,94 @@
 
 ## What is AlphaGraph?
 
-AlphaGraph automates the most time-consuming part of quantitative finance research: the iterative cycle of forming a hypothesis, writing code to test it, running the test, and deciding whether the idea is any good.
+AlphaGraph automates the most time-consuming part of quantitative finance research: the iterative cycle of forming a hypothesis, writing code to test it, running the backtest, and deciding whether the idea holds up. A quant researcher typically spends days — or weeks — on this loop. AlphaGraph collapses it to minutes by deploying three specialized AI agents supervised by a deterministic orchestrator that routes work and enforces quality gates.
 
-A quant researcher typically spends days — or weeks — on this loop. AlphaGraph collapses it to minutes by deploying three specialized AI agents that each own a distinct step of the process, supervised by a deterministic orchestrator that routes work and enforces quality gates. The human researcher stays in the loop for the only decision that matters: final approval.
-
-The system's name comes from its 3D interactive graph visualization that makes the multi-agent workflow tangible and debuggable in real time.
-
-`[SCREENSHOT: AlphaGraph 3D workflow visualization — nodes lit up as the pipeline executes]`
+Its name comes from the interactive live graph visualization that makes the multi-agent workflow tangible and debuggable in real time — every node lights up as it executes, and the back-edge revision arc animates whenever the pipeline loops.
 
 ---
 
-## The Problem It Solves
+## Using AlphaGraph
 
-Quantitative factor research is expensive, repetitive, and error-prone when done by hand:
+The app is a resizable split-panel workspace. The left panel controls the research run; the right panel displays the artifacts.
 
-- Writing a hypothesis, translating it to code, debugging that code, and running a backtest can take a full day per idea.
-- Researchers often make methodological mistakes (e.g., using raw price levels as a factor) that are only caught late.
-- Iterating based on critique requires re-doing the whole cycle from scratch.
+**Essential Steps**
 
-AlphaGraph turns this into an automated feedback loop where bad ideas are caught and revised by AI before they ever reach a human reviewer.
+1. **Enter a Research Brief.** Type a natural-language description of the factor (e.g., "Test a 20-day momentum factor normalized by sector-relative volatility"). This brief shapes the research plan, candidate pool, and quality criteria.
 
----
+2. **Upload a Dataset.** Provide a CSV file with at minimum `date`, `ticker`, and `close` columns. The system validates schema and data quality before proceeding. Alternatively, use the **Suggest from Kaggle** button — AlphaGraph queries Claude to extract a search term from your brief and returns matching Kaggle datasets ready to use with one click.
 
-## How It Works: The Agentic Pipeline
+3. **Run the Pipeline.** Click **Run Research**. The backend starts immediately and returns a run ID; the frontend polls for live updates every 2 seconds. The workflow progress bar and the **Workflow Graph** tab both update in real time as each node completes.
 
-AlphaGraph runs a **state-machine-driven multi-agent workflow** managed by [LangGraph](https://github.com/langchain-ai/langgraph), a framework for building reliable, checkpointed AI pipelines. Three specialized agents — each powered by a different frontier LLM — collaborate in sequence, with a deterministic supervisor routing work between them.
+4. **Inject Researcher Guidance (Optional).** While the pipeline is running, a **Researcher Guidance** panel appears. Type natural-language instructions — "try longer windows", "switch to momentum", "add volatility normalization" — and click **Send**. The next revision or candidate generation step picks them up and adapts accordingly.
 
-`[DIAGRAM: Pipeline flow — Supervisor → Hypothesis Agent → Coding Agent → Execution Sandbox → Critic Agent → (loop or) Human Approval → Finalize]`
+5. **Review Revision Checkpoints.** Before each factor revision, the pipeline **pauses** and surfaces the current attempt's full artifact — factor spec, generated code, backtest metrics, and critique. Click **Continue to Revision** to approve the revision, or **Skip to Next Candidate** to move on without revising this one.
 
-### The Four Stages
-
-#### 1. Hypothesis Agent — *"What should we test?"*
-- **Powered by:** Google Gemini 2.5 Flash
-- **Job:** Propose a quantitative trading factor — a mathematical formula that ranks stocks by predicted future return.
-- **First attempt is deliberately naive** (e.g., rank stocks by raw closing price) so the Critic can catch it and trigger improvement.
-- **Output:** A structured `FactorSpec` — name, thesis, expression, trading universe, rebalance frequency, and expected direction.
-
-#### 2. Coding Agent — *"How do we test it?"*
-- **Powered by:** Anthropic Claude Sonnet 4
-- **Job:** Translate the factor specification into a runnable Python backtest script.
-- **The script is isolated** — it reads from environment variables and writes results to a defined output path, ensuring no side effects.
-- **Output:** A complete Python file that imports the backtest engine and executes the strategy.
-
-#### 3. Execution Sandbox — *"Does it actually work?"*
-- **Powered by:** Local Python subprocess (no LLM)
-- **Job:** Run the generated code in an isolated subprocess against historical market data (daily OHLCV prices for 8+ large-cap stocks).
-- **Calculates:** Sharpe ratio, maximum drawdown, number of trades, and other standard performance metrics.
-- **Output:** A structured JSON result with full performance statistics.
-
-#### 4. Factor Critic Agent — *"Is it any good?"*
-- **Powered by:** DeepSeek Reasoner (a dedicated reasoning model)
-- **Job:** Evaluate the backtest results against five hard quality gates:
-
-| Gate | Criterion |
-|---|---|
-| Execution | Script must run without errors |
-| Methodology | Factor must not use raw price levels |
-| Activity | At least 20 trades must be generated |
-| Risk-adjusted return | Sharpe ratio ≥ 0.35 |
-| Drawdown | Maximum drawdown must not exceed −25% |
-
-- If any gate fails, the Critic writes specific revision instructions and the Supervisor loops back to the Hypothesis Agent for another attempt.
-- If all gates pass, the workflow pauses for **human approval**.
-
-#### 5. Human-in-the-Loop — *"Do we ship it?"*
-- The pipeline **interrupts** and surfaces the full research artifact (factor spec, generated code, backtest metrics, critique scorecard) to the researcher.
-- The researcher clicks **Approve** or **Reject**.
-- If approved, the system writes a final research report to disk and marks the run complete.
+6. **Final Approval.** When the best surviving candidate clears all quality gates, the pipeline pauses for a final review. Inspect the complete artifact in the right panel — the persistent attempt navigator in the sidebar lets you compare all prior attempts side by side, across every tab (Factor, Code, Metrics, Critique). Click **Approve Result** to write the research package to disk, or **Reject** to discard.
 
 ---
 
-## Key Technical Features
+## Reproducibility and Technical Architecture
 
-### Multi-Provider LLM Routing
-Each agent role is assigned to the frontier model best suited for its task — a reasoning model for critique, a fast generative model for hypothesis, a code-capable model for implementation. Providers are swappable via environment variables with no code changes.
+AlphaGraph runs a resilient, state-machine-driven multi-agent workflow managed by LangGraph.
 
-### Resilient Fallback System
-Every LLM provider is wrapped in a `ResilientLLMProvider`. If an API key is missing or a call fails, the system falls back to a deterministic demo provider. **The entire pipeline runs offline without any API keys**, making it reliable for live demos.
+### The Agentic Pipeline Stages
 
-### LangGraph Checkpointing
-Workflow state is checkpointed to SQLite after every node. If the process crashes or the human takes a long time to approve, the run resumes exactly where it left off. This is what separates a robust agentic system from a fragile script.
+The graph handles dataset validation, multi-candidate generation, granular repair loops, and two tiers of human checkpoints.
 
-### Artifact Persistence
+**Ingest Brief / Dataset & Parse Plan**
+Structured intent is extracted from the brief (signal direction, sector neutrality, lookback hints) using Google Gemini 2.5 Flash to create a `ResearchPlan` that governs quality criteria and iteration budgets. The uploaded CSV is validated for sufficient breadth — ticker count, date range, required columns — before execution proceeds.
+
+**Generate Candidates**
+Produces a pool of four prioritized factor candidates (name, thesis, expression) tuned to the inferred signal intent (momentum, mean-reversion, or volatility-adjusted reversal). If researcher guidance was injected before this step, the intent can be overridden — e.g., guidance containing "momentum" or "trend" flips a reversal plan to a momentum plan.
+
+**Code Generation**
+Translates the active candidate into a runnable Python backtest script using Anthropic Claude Sonnet 4. The coding agent receives the real column profile of the uploaded dataset and adapts the script accordingly, rather than assuming a fixed schema.
+
+**Execution Sandbox**
+Runs the generated script in an isolated subprocess with scoped environment variables, calculating Sharpe ratio, annual return, IC mean, maximum drawdown, turnover, and trade count against the user-provided data.
+
+**Evaluate Results**
+Scores the backtest output against deterministic quality gates (execution success, methodology correctness, risk-adjusted return thresholds, breadth minimums) using DeepSeek Reasoner. If the factor passes, it is marked reviewable and the pipeline moves toward the final human checkpoint. If it fails, the Supervisor applies a repair loop.
+
+**Repair Loops**
+
+- *Code Fix* — if the script threw a runtime error, the pipeline retries code generation for the same candidate (up to the per-candidate fix budget).
+- *Interim Human Review* — if the factor ran but underperformed, the pipeline **pauses** before committing to a revision, surfacing the full attempt artifact for researcher inspection. The researcher can inject guidance at this point, then approve the revision or skip to the next candidate.
+- *Factor Revision* — if the researcher approves the revision, a new candidate is generated by adapting the expression (flipping direction, adding volatility normalization, extending the lookback window), incorporating any injected guidance.
+
+**Finalize**
+Interrupts for the final human review when at least one reviewable candidate survives. The best candidate is selected by quality rank, then OOS Sharpe, then drawdown. After approval, the run writes a structured artifact bundle — generated code, execution results, attempt snapshots, and the final report — to `artifacts/<run-id>/`.
+
+### Key Technical Innovations
+
+**Async Non-Blocking Execution**
+`graph.invoke` runs in a daemon thread so the HTTP response returns immediately after run creation. The frontend polls `GET /runs/{run_id}` every 2 seconds, reading live LangGraph checkpoints via `get_state`. An anti-regression guard on the client ensures the workflow trace and attempt list never roll back when a checkpoint races with a stale read.
+
+**Mid-Run Researcher Guidance**
+A `POST /runs/{run_id}/guidance` endpoint writes natural-language notes into an in-memory store keyed by run ID. `generate_candidates` and `revise_factor` read from this store and apply keyword-based overrides — momentum/trend, reversal/contrarian, volatility normalization, longer lookback — before generating the next factor. Guidance persists across the full run so every subsequent revision benefits from it.
+
+**Two-Tier Human-in-the-Loop**
+LangGraph's `interrupt()` primitive pauses execution mid-graph and resumes cleanly with `Command(resume=value)`. AlphaGraph uses this at two distinct points: an *interim checkpoint* before each factor revision (so the researcher can inspect and guide each attempt) and a *final checkpoint* before the research package is written to disk. When the user approves or rejects, the backend resumes the graph in a background thread (non-blocking HTTP response) and restarts the frontend polling loop.
+
+**Candidate Pool Architecture**
+The system maintains a pool of factor candidates tested sequentially, each with its own code-fix and revision budget. Rather than discarding earlier attempts, AlphaGraph tracks all reviewable candidates and selects the best survivor — ranked by quality tier, then risk-adjusted return — for the final review. The persistent attempt navigator in the Artifacts panel lets researchers browse every attempt across all tabs without losing context.
+
+**Multi-Provider LLM Routing**
+Three frontier LLMs are orchestrated — Gemini 2.5 Flash for plan parsing and candidate generation, Claude Sonnet 4 for code generation, DeepSeek Reasoner for evaluation — each assigned to the task it is best suited for. Providers are fully swappable through environment variables. A `ResilientLLMProvider` wrapper allows the pipeline to fall back to a deterministic demo provider if any API key is missing, so the full end-to-end loop runs offline.
+
+**LangGraph SQLite Checkpointing**
+State is checkpointed after every node. Runs can resume exactly where they stopped after a crash or a long human review. The SQLite connection is opened with `check_same_thread=False`, allowing `get_state` reads from the polling thread while `invoke` runs in the background thread.
+
+**Deterministic Quality Gates**
+The evaluator uses rule-based scoring — not just LLM judgment — to catch methodological issues such as look-ahead bias, insufficient breadth, or high turnover, with thresholds driven by the `ResearchPlan`.
+
+**Subprocess Isolation**
+Generated code runs in an isolated subprocess with scoped environment variables, preventing AI-generated code from accessing anything outside approved data paths.
+
+**Live SVG Workflow Graph**
+The Workflow Graph tab renders the agent pipeline as an interactive SVG DAG. Each node — color-coded by role (blue for the Hypothesis Agent, orange for the Coding Agent, purple for the Factor Critic, yellow for Human-in-the-Loop, green for Finalize) — activates with a glow and animated dash as the workflow progresses. Completed nodes turn green. The back-edge revision arc animates amber when a revision loop is active. Clicking any node opens a live detail panel showing the most recent output from that agent.
+
+**Artifact Persistence**
 Every run produces a structured artifact directory:
 ```
 artifacts/<run-id>/
@@ -95,13 +101,9 @@ artifacts/<run-id>/
   attempt-1/execution_result.json
   attempt-1/attempt_snapshot.json
   attempt-2/...
+  normalized_dataset.csv
   final_report.json
 ```
-
-### 3D Workflow Visualization
-The frontend renders the agent pipeline as an interactive 3D graph using Three.js. Each node — color-coded by role (cyan for supervisor, blue for hypothesis, orange for coding, purple for critic, yellow for human review, green for finalize) — lights up as the workflow progresses in real time.
-
-`[SCREENSHOT: Close-up of the 3D graph with an active node highlighted and edge animation]`
 
 ---
 
@@ -109,141 +111,18 @@ The frontend renders the agent pipeline as an interactive 3D graph using Three.j
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 19 + TypeScript + Three.js + Tailwind CSS |
+| Frontend | React 19 + TypeScript + Tailwind CSS |
 | Backend | FastAPI + LangGraph + SQLite |
-| Orchestration | LangGraph `StateGraph` with interrupt/resume |
-| Hypothesis Agent | Google Gemini 2.5 Flash |
+| Orchestration | LangGraph `StateGraph` with `interrupt` / `resume` |
+| Plan & Candidate Agent | Google Gemini 2.5 Flash |
 | Coding Agent | Anthropic Claude Sonnet 4 |
-| Critic Agent | DeepSeek Reasoner |
+| Evaluation Agent | DeepSeek Reasoner |
 | Execution | Python subprocess sandbox |
-| Data | Local OHLCV CSV (8 large-cap stocks, ~1 year) |
+| Data | User-uploaded long-format CSV (`date`, `ticker`, `close`) |
+| Dataset Discovery | Kaggle API + Claude-generated search query (optional) |
+| Workflow Visualization | Interactive SVG DAG with live state projection |
 | Packaging | Docker + Docker Compose |
 
 ---
 
-## Running the App — Quickstart (5 minutes)
-
-### Prerequisites
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
-- *(Optional)* API keys for Google, Anthropic, and DeepSeek for live LLM calls
-
-### Steps
-
-**1. Clone the repository**
-```bash
-git clone <REPO_URL>
-cd alphagraph
-```
-
-**2. Configure environment variables**
-```bash
-cp .env.example .env
-```
-
-Open `.env` in any text editor. Fill in any API keys you have (all are optional — the system runs in demo mode without them):
-```
-GOOGLE_API_KEY=your_google_key_here
-ANTHROPIC_API_KEY=your_anthropic_key_here
-DEEPSEEK_API_KEY=your_deepseek_key_here
-```
-
-**3. Build and start the app**
-```bash
-docker compose up --build
-```
-This builds both the backend and frontend containers. First build takes ~2–3 minutes. Subsequent starts are fast.
-
-**4. Open the app**
-
-Navigate to `http://localhost:5173` in your browser.
-
-`[SCREENSHOT: Landing page / initial UI state]`
-
-**5. Run a demo**
-
-Click **"Run Demo"**. The 3D graph will animate as agents execute. Watch the pipeline progress through hypothesis → coding → execution → critique → (potentially revise) → human approval.
-
-When the workflow pauses for approval, a panel will appear with the full research artifact. Click **Approve** to finalize the run.
-
-`[SCREENSHOT: Approval panel showing factor spec, metrics, and Approve/Reject buttons]`
-
----
-
-## Reproducing the Prototype (Manual Setup)
-
-If you prefer to run without Docker:
-
-### Backend
-```bash
-# Install uv (fast Python package manager)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install backend dependencies
-uv sync --project backend --group dev
-
-# Start the API server
-uv run --project backend uvicorn alphagraph.app:create_app \
-  --factory --host 127.0.0.1 --port 8000
-```
-
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open `http://localhost:5173`.
-
-### Running Tests
-```bash
-# Backend unit + integration tests
-uv run --project backend pytest backend/tests -q
-
-# End-to-end test (requires Playwright browsers)
-cd frontend
-PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright npx playwright test tests/demo.spec.ts
-```
-
----
-
-## Project Structure
-
-```
-alphagraph/
-├── backend/
-│   ├── src/alphagraph/
-│   │   ├── api.py          # REST endpoints
-│   │   ├── graph/          # LangGraph workflow definition
-│   │   ├── llm/            # Multi-provider LLM routing
-│   │   ├── runtime/        # Backtest execution engine & DSL
-│   │   ├── storage/        # SQLite persistence & artifact writer
-│   │   └── prompts/        # System prompts for each agent role
-│   ├── data/prices.csv     # Historical market data
-│   └── tests/              # Unit, integration, and API tests
-├── frontend/
-│   └── src/
-│       ├── components/
-│       │   └── GraphScene.tsx   # Three.js 3D visualization (679 lines)
-│       └── ...
-├── artifacts/              # Run outputs (auto-generated)
-├── docker-compose.yml
-└── .env.example
-```
-
----
-
-## What Makes This Non-Trivial
-
-1. **Three frontier LLMs orchestrated in a single pipeline** — each chosen for the task it is best at, communicating through strongly-typed Pydantic schemas.
-
-2. **Deterministic quality gates** — the Critic uses a rule-based scoring engine (not just vibes) to catch methodological errors like look-ahead bias or insufficient statistical power.
-
-3. **Human-in-the-loop interrupt/resume** — LangGraph's `interrupt()` primitive pauses a live async workflow mid-execution, persists state, and resumes cleanly after a human decision. This is architecturally non-trivial.
-
-4. **Subprocess isolation** — generated code runs in a child process with scoped environment variables, preventing the AI-generated code from accessing anything outside its sandbox.
-
-5. **Offline resilience** — the entire pipeline degrades gracefully to deterministic demo outputs when no API keys are present, making it demo-safe under any conditions.
-
-`[LINK: GitHub repository]`
-`[LINK: Demo video walkthrough]`
+[GitHub](https://github.com/JayantDeveloper/AlphaGraph) · [Demo Video](https://youtu.be/sWx4UXE1rq8)

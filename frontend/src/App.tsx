@@ -42,6 +42,10 @@ export default function App() {
   const [guidanceDraft, setGuidanceDraft] = useState("");
   const [guidanceSent, setGuidanceSent] = useState<string[]>([]);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set to true while an approval HTTP call is in-flight or the graph is
+  // resuming — prevents the polling loop from re-stopping on the first poll
+  // that still returns approval_status=pending before the HIL node completes.
+  const approvalInFlight = useRef(false);
 
   // Resizable split
   const [splitPct, setSplitPct] = useState(50);
@@ -77,8 +81,14 @@ export default function App() {
               return next;
             })
           );
+          // Clear the in-flight flag once the graph has moved past HIL.
+          if (next.approval_status !== "pending") {
+            approvalInFlight.current = false;
+          }
           const isDone = next.status === "completed" || next.status === "failed";
-          const isPaused = next.approval_status === "pending";
+          // Don't stop on "pending" immediately after an approval submission —
+          // the first checkpoint after resumption may still show the old HIL state.
+          const isPaused = next.approval_status === "pending" && !approvalInFlight.current;
           if (isDone || isPaused) {
             setActiveRunId(null);
             setBusy(false);
@@ -156,16 +166,25 @@ export default function App() {
 
   async function handleApproval(approved: boolean) {
     if (!snapshot) return;
+    const runId = snapshot.run_id;
     setBusy(true);
     setError(null);
+    // Mark that we're resuming so the polling loop doesn't re-stop on the
+    // first poll that might still see approval_status=pending.
+    approvalInFlight.current = true;
     try {
-      const next = await approveRun(snapshot.run_id, approved);
+      const next = await approveRun(runId, approved);
       startTransition(() => setSnapshot(next));
+      // Restart polling — the graph is now resuming in the background.
+      // The polling loop will stop itself when the run completes or a new
+      // HIL interrupt fires.
+      setActiveRunId(runId);
     } catch (e) {
+      approvalInFlight.current = false;
       setError(e instanceof Error ? e.message : "Failed to submit approval.");
-    } finally {
       setBusy(false);
     }
+    // Don't setBusy(false) in finally — let the polling loop do it when it stops.
   }
 
   async function handleSendGuidance() {

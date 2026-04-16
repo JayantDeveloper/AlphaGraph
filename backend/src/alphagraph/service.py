@@ -143,9 +143,31 @@ class AlphaGraphService:
         _guidance_store.add(run_id, guidance_text)
 
     def approve_run(self, run_id: str, *, approved: bool) -> RunSnapshot:
-        snapshot = self._invoke(run_id, Command(resume=approved))
-        self.repository.save_snapshot(snapshot)
-        return snapshot
+        """Resume a HIL-interrupted graph in a background thread.
+
+        We start the resumption asynchronously (like create_run) so the HTTP
+        handler returns fast even when the next segment involves LLM calls.
+        We join for up to 2 s to let fast nodes (finalize_run) complete before
+        returning, but don't block longer for slow nodes (generate_code).
+        """
+        _ACTIVE_RUNS.add(run_id)
+
+        def _resume() -> None:
+            try:
+                final = self._invoke(run_id, Command(resume=approved))
+                self.repository.save_snapshot(final)
+            except Exception:
+                pass
+            finally:
+                _ACTIVE_RUNS.discard(run_id)
+
+        t = threading.Thread(target=_resume, daemon=True)
+        t.start()
+        # Wait briefly so fast paths (finalize_run, route_after_hil) complete
+        # before we read the checkpoint.  Slow paths (LLM codegen) will have
+        # progressed past the HIL node by then even if not yet done.
+        t.join(timeout=2.0)
+        return self.get_run(run_id)
 
     def _invoke(self, run_id: str, payload) -> RunSnapshot:
         config = {"configurable": {"thread_id": run_id}}

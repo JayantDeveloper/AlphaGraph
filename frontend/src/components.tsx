@@ -656,29 +656,87 @@ export function ArtifactPane({ snapshot, busy }: { snapshot: RunSnapshot | null;
       </div>
 
 
-      {/* Content */}
-      <div style={{ flex: 1, padding: 16, overflow: "auto", display: "flex", flexDirection: "column" }}>
-        {!snapshot ? (
-          <EmptyArtifactState />
-        ) : !selectedAttempt && activeTab !== "final" ? (
-          <EmptyArtifactState />
-        ) : activeTab === "factor" && attempts.length > 0 ? (
-          <FactorTab
-            attempts={attempts}
-            selectedIdx={selectedAttemptIdx}
-            onSelect={(idx) => { timers.current.forEach(clearTimeout); setSelectedAttemptIdx(idx); }}
-          />
-        ) : activeTab === "code" && selectedAttempt ? (
-          <CodeTab attempt={selectedAttempt} />
-        ) : activeTab === "metrics" && selectedAttempt ? (
-          <MetricsTab attempt={selectedAttempt} />
-        ) : activeTab === "critique" && selectedAttempt ? (
-          <CritiqueTab attempt={selectedAttempt} />
-        ) : activeTab === "final" && isFinalized ? (
-          <FinalTab snapshot={snapshot} />
-        ) : (
-          <EmptyArtifactState />
+      {/* Body: persistent attempt nav + content */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+
+        {/* ── Attempt navigator (all tabs except final) ────────────── */}
+        {attempts.length > 0 && activeTab !== "final" && (
+          <div
+            style={{
+              width: 172,
+              flexShrink: 0,
+              borderRight: "1px solid var(--border)",
+              overflowY: "auto",
+              padding: "8px 0",
+            }}
+          >
+            {attempts.map((a, idx) => {
+              const q = a.evaluation.factor_quality ?? "";
+              const isSelected = idx === selectedAttemptIdx;
+              return (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    timers.current.forEach(clearTimeout);
+                    setSelectedAttemptIdx(idx);
+                  }}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    padding: "7px 12px 7px 10px",
+                    background: isSelected ? "rgba(156,213,255,0.06)" : "transparent",
+                    border: "none",
+                    borderRight: `2px solid ${isSelected ? qualityColor(q) : "transparent"}`,
+                    color: isSelected ? "var(--text)" : "var(--muted)",
+                    fontSize: "0.7rem",
+                    fontWeight: isSelected ? 600 : 400,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    textAlign: "left",
+                    lineHeight: 1.35,
+                    transition: "background 100ms",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: qualityColor(q),
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {idx + 1} · {a.factor_spec.name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         )}
+
+        {/* ── Tab content ──────────────────────────────────────────── */}
+        <div style={{ flex: 1, minWidth: 0, padding: 16, overflow: "auto", display: "flex", flexDirection: "column" }}>
+          {!snapshot ? (
+            <EmptyArtifactState />
+          ) : !selectedAttempt && activeTab !== "final" ? (
+            <EmptyArtifactState />
+          ) : activeTab === "factor" && selectedAttempt ? (
+            <FactorTab attempt={selectedAttempt} />
+          ) : activeTab === "code" && selectedAttempt ? (
+            <CodeTab attempt={selectedAttempt} />
+          ) : activeTab === "metrics" && selectedAttempt ? (
+            <MetricsTab attempt={selectedAttempt} />
+          ) : activeTab === "critique" && selectedAttempt ? (
+            <CritiqueTab attempt={selectedAttempt} />
+          ) : activeTab === "final" && isFinalized ? (
+            <FinalTab snapshot={snapshot} />
+          ) : (
+            <EmptyArtifactState />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -721,77 +779,9 @@ function qualityColor(q: string): string {
   return "var(--subtle)";
 }
 
-function FactorTab({
-  attempts,
-  selectedIdx,
-  onSelect,
-}: {
-  attempts: AttemptRecord[];
-  selectedIdx: number;
-  onSelect: (idx: number) => void;
-}) {
-  const attempt = attempts[selectedIdx];
-  if (!attempt) return null;
-
+function FactorTab({ attempt }: { attempt: AttemptRecord }) {
   return (
-    <div style={{ display: "flex", gap: 0, flex: 1, minHeight: 0, height: "100%" }} className="animate-fade-up">
-      {/* Left vertical nav — only shown when there are multiple attempts */}
-      {attempts.length > 1 && (
-        <div
-          style={{
-            width: 180,
-            flexShrink: 0,
-            borderRight: "1px solid var(--border)",
-            overflowY: "auto",
-            paddingRight: 0,
-            marginRight: 16,
-          }}
-        >
-          {attempts.map((a, idx) => {
-            const q = a.evaluation.factor_quality ?? "";
-            const isSelected = idx === selectedIdx;
-            return (
-              <button
-                key={idx}
-                onClick={() => onSelect(idx)}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 7,
-                  padding: "7px 10px 7px 0",
-                  background: "transparent",
-                  border: "none",
-                  borderRight: `2px solid ${isSelected ? qualityColor(q) : "transparent"}`,
-                  color: isSelected ? "var(--text)" : "var(--muted)",
-                  fontSize: "0.7rem",
-                  fontWeight: isSelected ? 600 : 400,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  textAlign: "left",
-                  lineHeight: 1.35,
-                }}
-              >
-                <span
-                  style={{
-                    width: 5,
-                    height: 5,
-                    borderRadius: "50%",
-                    background: qualityColor(q),
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {idx + 1} · {a.factor_spec.name}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Right content */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }} className="animate-fade-up">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
             <h2
@@ -844,7 +834,6 @@ function FactorTab({
             </ul>
           </div>
         )}
-      </div>
     </div>
   );
 }
