@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
 from langgraph.types import Command
 
+from alphagraph import guidance as _guidance_store
 from alphagraph.graph.workflow import WorkflowRuntime, create_workflow
 from alphagraph.llm.provider import DemoLLMProvider, build_agent_suite
 from alphagraph.schemas import (
@@ -24,11 +26,16 @@ DEFAULT_BRIEF = (
     "Test a simple cross-sectional equity factor on this dataset."
 )
 
+# Tracks run_ids whose graph invocation is currently in-flight.
+# CPython set operations are GIL-atomic for our add/discard/in pattern.
+_ACTIVE_RUNS: set[str] = set()
+
 
 @dataclass(frozen=True)
 class UploadedDatasetInput:
     filename: str
     content: bytes
+    label: str | None = None
 
 
 class AlphaGraphService:
@@ -64,7 +71,7 @@ class AlphaGraphService:
                 uploaded_dataset.content,
             )
             resolved_dataset_path = uploaded_path
-            dataset_label = uploaded_dataset.filename
+            dataset_label = uploaded_dataset.label or uploaded_dataset.filename
             artifact_paths["uploaded_dataset"] = str(uploaded_path)
 
         initial_state = {
@@ -82,26 +89,62 @@ class AlphaGraphService:
             "supervisor_decision": SupervisorDecision.INGEST_DATASET,
             "current_node": WorkflowNode.INGEST_BRIEF,
             "workflow_trace": [],
-            "status": "queued",
+            "status": "running",
             "attempts": [],
             "candidate_pool": [],
             "reviewable_candidate_ids": [],
             "package_type": None,
             "artifact_paths": artifact_paths,
         }
-        snapshot = self._invoke(run_id, initial_state)
-        self.repository.save_snapshot(snapshot)
+
+        # Persist an initial snapshot immediately so polling can start.
+        initial_snapshot = RunSnapshot.model_validate(initial_state)
+        self.repository.save_snapshot(initial_snapshot)
+
+        # Run the graph in a daemon thread so the HTTP response returns fast.
+        _ACTIVE_RUNS.add(run_id)
+
+        def _run() -> None:
+            try:
+                final_snapshot = self._invoke(run_id, initial_state)
+                self.repository.save_snapshot(final_snapshot)
+            except Exception:
+                pass  # graph nodes log their own errors
+            finally:
+                _ACTIVE_RUNS.discard(run_id)
+
+        threading.Thread(target=_run, daemon=True).start()
+        return initial_snapshot
+
+    def get_run(self, run_id: str) -> RunSnapshot:
+        """Return the most up-to-date snapshot.
+
+        While a run is active, reads live from the LangGraph checkpoint so
+        the caller sees progress after each node without waiting for
+        completion.  Falls back to the persisted repository on any error
+        or once the run has finished.
+        """
+        if run_id in _ACTIVE_RUNS:
+            config = {"configurable": {"thread_id": run_id}}
+            try:
+                state_snapshot = self.workflow.graph.get_state(config)
+                if state_snapshot and state_snapshot.values:
+                    return RunSnapshot.model_validate(state_snapshot.values)
+            except Exception:
+                pass  # fall through to repository
+
+        snapshot = self.repository.get_snapshot(run_id)
+        if snapshot is None:
+            raise KeyError(run_id)
         return snapshot
+
+    def inject_guidance(self, run_id: str, guidance_text: str) -> None:
+        """Store a researcher guidance note that running nodes will pick up."""
+        _guidance_store.add(run_id, guidance_text)
 
     def approve_run(self, run_id: str, *, approved: bool) -> RunSnapshot:
         snapshot = self._invoke(run_id, Command(resume=approved))
         self.repository.save_snapshot(snapshot)
-        return snapshot
-
-    def get_run(self, run_id: str) -> RunSnapshot:
-        snapshot = self.repository.get_snapshot(run_id)
-        if snapshot is None:
-            raise KeyError(run_id)
         return snapshot
 
     def _invoke(self, run_id: str, payload) -> RunSnapshot:

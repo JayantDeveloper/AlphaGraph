@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from langgraph.types import interrupt
 
+import alphagraph.guidance as _guidance_store
 from alphagraph.graph.state import RunState, validate_run_state
 from alphagraph.llm.provider import AgentSuite
 from alphagraph.runtime.dataset_csv import validate_dataset_file
@@ -108,6 +109,8 @@ def make_validate_dataset_node(artifact_store: ArtifactStore):
 def route_after_dataset_validation(state: RunState) -> str:
     snapshot = validate_run_state(state)
     if snapshot.dataset_validation and snapshot.dataset_validation.status == DatasetValidationStatus.INVALID:
+        # Only hard-fail on truly unreadable data (parse error / empty after cleaning).
+        # Column-structure mismatches are handled adaptively by the coding agent.
         return "finalize"
     return "parse_research_plan"
 
@@ -128,8 +131,8 @@ def parse_research_plan(state: RunState) -> RunState:
             "min_trade_count": 20,
             "max_turnover": 1.5,
         },
-        max_candidate_attempts=5,
-        max_revisions=2,
+        max_candidate_attempts=8,
+        max_revisions=3,
         max_code_fixes_per_candidate=1,
         sector_neutral_required=bool(parsed["sector_neutral_required"]),
     )
@@ -151,7 +154,8 @@ def generate_candidates(state: RunState) -> RunState:
     if not candidates:
         if snapshot.research_plan is None:
             raise ValueError("Research plan is required before candidate generation.")
-        candidates = _initial_candidates(snapshot.research_plan, snapshot.dataset_validation)
+        researcher_notes = _guidance_store.get(snapshot.run_id)
+        candidates = _initial_candidates(snapshot.research_plan, snapshot.dataset_validation, researcher_notes)
     return {
         "candidate_pool": [candidate.model_dump() for candidate in candidates],
         "status": "running",
@@ -203,7 +207,7 @@ def route_next_candidate(state: RunState) -> RunState:
             )
         return update
 
-    pending.status = CandidateStatus.RUNNING
+    pending = pending.model_copy(update={"status": CandidateStatus.RUNNING})
     updated_candidates = _replace_candidate(candidates, pending)
     return {
         "candidate_pool": [candidate.model_dump() for candidate in updated_candidates],
@@ -232,10 +236,6 @@ def make_generate_code_node(agent_suite: AgentSuite):
         snapshot = validate_run_state(state)
         candidate = _active_candidate(snapshot)
         hypothesis = HypothesisOutput(factor_spec=candidate.to_factor_spec())
-        codegen_output = agent_suite.coding_agent.translate(
-            hypothesis=hypothesis,
-            attempt_number=snapshot.attempt + 1,
-        )
         strategy_config = StrategyConfig(
             expression=candidate.expression,
             neutralization=candidate.neutralization,
@@ -244,13 +244,27 @@ def make_generate_code_node(agent_suite: AgentSuite):
             short_quantile=0.25,
             is_ratio=0.70,
         )
-        codegen_output = CodegenOutput(
+
+        # Build a dataset profile so the coding agent can adapt to the real columns.
+        dataset_profile: dict | None = None
+        if snapshot.dataset_validation:
+            dv = snapshot.dataset_validation
+            dataset_profile = {
+                "available_columns": dv.available_columns,
+                "column_dtypes": dv.column_dtypes,
+                "sample_rows": dv.sample_rows,
+                "detected_columns": dv.detected_columns,
+                "row_count": dv.row_count,
+                "ticker_count": dv.ticker_count,
+                "start_date": dv.start_date,
+                "end_date": dv.end_date,
+            }
+
+        codegen_output = agent_suite.coding_agent.translate(
+            hypothesis=hypothesis,
             strategy_config=strategy_config,
-            generated_code=codegen_output.generated_code.model_copy(
-                update={
-                    "script": _render_strategy_script(strategy_config),
-                }
-            ),
+            attempt_number=snapshot.attempt + 1,
+            dataset_profile=dataset_profile,
         )
         return {
             "codegen_output": codegen_output.model_dump(),
@@ -393,7 +407,8 @@ def route_post_evaluation(state: RunState) -> str:
     max_candidates = research_plan.max_candidate_attempts if research_plan else int(state.get("max_attempts", 5))
     if evaluation.factor_quality in {FactorQuality.WEAK, FactorQuality.SUSPICIOUS}:
         if int(state.get("revision_count", 0)) < max_revisions and len(state.get("candidate_pool", [])) < max_candidates:
-            return "revise_factor"
+            # Pause for researcher review before committing to another revision.
+            return "request_interim_review"
         return "route_next_candidate"
 
     if any(
@@ -404,6 +419,34 @@ def route_post_evaluation(state: RunState) -> str:
         return "route_next_candidate"
     if state.get("reviewable_candidate_ids"):
         return "human_review"
+    return "finalize"
+
+
+def request_interim_review(state: RunState) -> RunState:
+    """Mark the run as awaiting interim approval before the next revision.
+
+    This node fires between evaluate_results and revise_factor so the
+    researcher can inspect each failed attempt before the pipeline revises.
+    The approval_status=PENDING causes the frontend to show the HIL panel.
+    """
+    snapshot = validate_run_state(state)
+    return {
+        "approval_status": ApprovalState.PENDING,
+        "interim_hil_next": "revise_factor",
+        "status": "awaiting_approval",
+        "phase": RunPhase.AWAITING_APPROVAL,
+        "current_node": WorkflowNode.HUMAN_IN_THE_LOOP,
+        "workflow_trace": _append_trace(snapshot.workflow_trace, WorkflowNode.HUMAN_IN_THE_LOOP),
+    }
+
+
+def route_after_hil(state: RunState) -> str:
+    """Route after human_in_the_loop based on what the node stored in supervisor_decision."""
+    decision = state.get("supervisor_decision")
+    if decision in {SupervisorDecision.REVISE_FACTOR, SupervisorDecision.REVISE_FACTOR.value}:
+        return "revise_factor"
+    if decision in {SupervisorDecision.GENERATE_CANDIDATES, SupervisorDecision.GENERATE_CANDIDATES.value}:
+        return "route_next_candidate"
     return "finalize"
 
 
@@ -429,10 +472,12 @@ def revise_factor(state: RunState) -> RunState:
     if snapshot.research_plan is None or snapshot.current_evaluation is None:
         raise ValueError("Research plan and evaluation are required before factor revision.")
 
+    researcher_notes = _guidance_store.get(snapshot.run_id)
     revised = _revised_candidate(
         snapshot,
         candidate,
         snapshot.current_evaluation.factor_quality,
+        researcher_guidance=researcher_notes,
     )
     updated_candidates = list(snapshot.candidate_pool)
     updated_candidates.append(revised)
@@ -453,16 +498,37 @@ def revise_factor(state: RunState) -> RunState:
 
 def human_in_the_loop(state: RunState) -> RunState:
     snapshot = validate_run_state(state)
+    interim_next = snapshot.interim_hil_next  # set by request_interim_review when revision pending
+
     approved = interrupt(
         {
             "run_id": snapshot.run_id,
+            "is_interim": bool(interim_next),
+            "attempt": snapshot.attempt,
             "best_candidate_id": snapshot.best_candidate_id,
             "review_warning": snapshot.review_warning,
             "final_recommendation": snapshot.final_recommendation,
         }
     )
+
+    if interim_next:
+        # Researcher is reviewing a failed/suspicious attempt before revision.
+        # approved=True  → continue to revision
+        # approved=False → skip revision, move on to next candidate
+        next_decision = SupervisorDecision.REVISE_FACTOR if approved else SupervisorDecision.GENERATE_CANDIDATES
+        return {
+            "approval_status": ApprovalState.NOT_REQUESTED,
+            "interim_hil_next": None,
+            "status": "running",
+            "phase": RunPhase.EVALUATION_COMPLETE,
+            "supervisor_decision": next_decision,
+            "current_node": WorkflowNode.HUMAN_IN_THE_LOOP,
+        }
+
+    # Final review: approve or reject the best surviving candidate.
     return {
         "approval_status": ApprovalState.APPROVED if approved else ApprovalState.REJECTED,
+        "interim_hil_next": None,
         "status": "running",
         "supervisor_decision": SupervisorDecision.FINALIZE,
         "current_node": WorkflowNode.HUMAN_IN_THE_LOOP,
@@ -548,15 +614,25 @@ def _build_constraints(parsed_brief: dict[str, str | bool]) -> list[str]:
 def _initial_candidates(
     plan: ResearchPlan,
     dataset_validation,
+    researcher_guidance: list[str] | None = None,
 ) -> list[CandidateSpec]:
-    if plan.signal_intent == SignalIntent.MOMENTUM:
+    # Allow pre-run guidance to override the inferred signal intent.
+    signal_intent = plan.signal_intent
+    if researcher_guidance:
+        guidance_text = " ".join(researcher_guidance).lower()
+        if any(kw in guidance_text for kw in ("momentum", "trend", "winner", "follow trend")):
+            signal_intent = SignalIntent.MOMENTUM
+        elif any(kw in guidance_text for kw in ("volatility", "vol adj", "risk adj", "vol-adj")):
+            signal_intent = SignalIntent.VOLATILITY_ADJUSTED_REVERSAL
+
+    if signal_intent == SignalIntent.MOMENTUM:
         candidates = [
             CandidateSpec(candidate_id="cand-1", name="Momentum 5D", thesis="Recent winners may keep outperforming over the next day.", expression="rank(ts_return(close, 5))", complexity_score=1),
             CandidateSpec(candidate_id="cand-2", name="Momentum 10D", thesis="A slightly longer momentum window may stabilize signal quality.", expression="rank(ts_return(close, 10))", complexity_score=2),
             CandidateSpec(candidate_id="cand-3", name="Momentum 20D", thesis="Longer lookback momentum may reduce noise.", expression="rank(ts_return(close, 20))", complexity_score=3),
             CandidateSpec(candidate_id="cand-4", name="Vol-Adjusted Momentum 10D", thesis="Normalize momentum by trailing volatility to reduce noisy spikes.", expression="rank(ts_return(close, 10) / ts_std(close, 20))", complexity_score=4),
         ]
-    elif plan.signal_intent == SignalIntent.VOLATILITY_ADJUSTED_REVERSAL:
+    elif signal_intent == SignalIntent.VOLATILITY_ADJUSTED_REVERSAL:
         candidates = [
             CandidateSpec(candidate_id="cand-1", name="Vol-Adjusted Reversal 3D", thesis="Short-term losers may mean-revert when scaled by trailing volatility.", expression="-rank(ts_return(close, 3) / ts_std(close, 20))", complexity_score=2),
             CandidateSpec(candidate_id="cand-2", name="Vol-Adjusted Reversal 5D", thesis="Five-day reversal may capture oversold moves more cleanly.", expression="-rank(ts_return(close, 5) / ts_std(close, 20))", complexity_score=3),
@@ -607,8 +683,90 @@ def _replace_candidate(candidates: list[CandidateSpec], replacement: CandidateSp
     return updated
 
 
-def _revised_candidate(snapshot, candidate: CandidateSpec, factor_quality: FactorQuality) -> CandidateSpec:
+def _revised_candidate(
+    snapshot,
+    candidate: CandidateSpec,
+    factor_quality: FactorQuality,
+    researcher_guidance: list[str] | None = None,
+) -> CandidateSpec:
     expression = candidate.expression
+    evaluation = snapshot.current_evaluation
+    reasons = evaluation.reasons if evaluation else []
+    next_id = f"cand-{len(snapshot.candidate_pool) + 1}"
+
+    # ── Researcher guidance overrides (highest priority) ──────────────────
+    if researcher_guidance:
+        guidance_text = " ".join(researcher_guidance).lower()
+        note = "; ".join(researcher_guidance[:2])
+
+        # Flip to momentum direction
+        if any(kw in guidance_text for kw in ("momentum", "trend", "winner", "follow trend")):
+            if expression.startswith("-"):
+                return CandidateSpec(
+                    candidate_id=next_id,
+                    name=f"Guided Momentum {candidate.name.replace('Reversal', '').strip()}",
+                    thesis=f"Researcher guidance: '{note}' — switched to momentum direction.",
+                    expression=expression[1:],
+                    neutralization=candidate.neutralization,
+                    complexity_score=min(candidate.complexity_score + 1, 5),
+                    status=CandidateStatus.REVISED,
+                )
+
+        # Flip to reversal direction
+        if any(kw in guidance_text for kw in ("reversal", "mean revert", "contrarian", "loser rebound")):
+            if not expression.startswith("-"):
+                return CandidateSpec(
+                    candidate_id=next_id,
+                    name=f"Guided Reversal {candidate.name.replace('Momentum', '').strip()}",
+                    thesis=f"Researcher guidance: '{note}' — switched to reversal direction.",
+                    expression="-" + expression,
+                    neutralization=candidate.neutralization,
+                    complexity_score=min(candidate.complexity_score + 1, 5),
+                    status=CandidateStatus.REVISED,
+                )
+
+        # Add volatility normalization
+        if any(kw in guidance_text for kw in ("volatility", "vol", "normalize", "risk adjust", "sharpe")):
+            if "/ ts_std" not in expression:
+                new_expr = expression.replace("))", ") / ts_std(close, 20))")
+                return CandidateSpec(
+                    candidate_id=next_id,
+                    name=f"Guided Vol-Adj {candidate.name}",
+                    thesis=f"Researcher guidance: '{note}' — added volatility normalization.",
+                    expression=new_expr,
+                    neutralization=candidate.neutralization,
+                    complexity_score=min(candidate.complexity_score + 1, 5),
+                    status=CandidateStatus.REVISED,
+                )
+
+        # Extend lookback window
+        if any(kw in guidance_text for kw in ("longer", "larger window", "increase window", "slow down", "longer period", "longer lookback")):
+            new_expr = _strengthen_expression(expression)
+            if new_expr != expression:
+                return CandidateSpec(
+                    candidate_id=next_id,
+                    name=f"Guided Longer Window {candidate.name}",
+                    thesis=f"Researcher guidance: '{note}' — extended lookback window.",
+                    expression=new_expr,
+                    neutralization=candidate.neutralization,
+                    complexity_score=min(candidate.complexity_score + 1, 5),
+                    status=CandidateStatus.REVISED,
+                )
+
+    # ── Standard revision logic ───────────────────────────────────────────
+    # If the reversal direction is consistently losing money, flip to momentum.
+    if "reversal_signal_negative" in reasons and expression.startswith("-rank("):
+        flipped = expression[1:]  # strip the leading '-'
+        return CandidateSpec(
+            candidate_id=f"cand-{len(snapshot.candidate_pool) + 1}",
+            name=f"Momentum {candidate.name.replace('Reversal', '').strip()}",
+            thesis="Reversal was consistently negative — testing momentum direction instead.",
+            expression=flipped,
+            neutralization=candidate.neutralization,
+            complexity_score=min(candidate.complexity_score + 1, 5),
+            status=CandidateStatus.REVISED,
+        )
+
     if factor_quality == FactorQuality.SUSPICIOUS:
         revised_expression = _simplify_expression(expression, snapshot.research_plan.signal_intent)
         thesis = "Simplify the expression to reduce out-of-sample decay and instability."

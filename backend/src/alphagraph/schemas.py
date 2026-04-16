@@ -166,6 +166,9 @@ class DatasetValidationResult(BaseModel):
     status: DatasetValidationStatus = DatasetValidationStatus.PENDING
     errors: list[str] = Field(default_factory=list)
     available_columns: list[str] = Field(default_factory=list)
+    column_dtypes: dict[str, str] = Field(default_factory=dict)
+    sample_rows: list[dict] = Field(default_factory=list)
+    detected_columns: dict[str, str] = Field(default_factory=dict)
     row_count: int = 0
     ticker_count: int = 0
     start_date: str | None = None
@@ -293,6 +296,7 @@ class RunSnapshot(BaseModel):
     review_warning: str | None = None
     final_report_path: str | None = None
     artifact_paths: dict[str, str] = Field(default_factory=dict)
+    interim_hil_next: str | None = None
 
 
 class CreateRunRequest(BaseModel):

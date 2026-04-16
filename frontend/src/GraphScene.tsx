@@ -8,8 +8,17 @@ import deepseekLogo from "../model-logos-square/deepseek.webp";
 
 // ─── Node definitions ─────────────────────────────────────────────────────────
 
+type GraphNodeId =
+  | "supervisor"
+  | "hypothesis_agent"
+  | "coding_agent"
+  | "execution_tool"
+  | "factor_critic"
+  | "human_in_the_loop"
+  | "finalize_run";
+
 interface NodeMeta {
-  id: WorkflowNode;
+  id: GraphNodeId;
   shortName: string;
   label: string;
   typeLabel: string;
@@ -104,15 +113,35 @@ const NODES: NodeMeta[] = [
 
 type NodeState = "pending" | "active" | "complete";
 
-function getNodeState(id: WorkflowNode, active: WorkflowNode | null, visited: Set<string>): NodeState {
+const TRACE_TO_GRAPH: Partial<Record<WorkflowNode, GraphNodeId>> = {
+  ingest_brief: "supervisor",
+  ingest_dataset: "supervisor",
+  validate_dataset: "supervisor",
+  parse_research_plan: "supervisor",
+  generate_candidates: "hypothesis_agent",
+  generate_code: "coding_agent",
+  execute_backtest: "execution_tool",
+  evaluate_results: "factor_critic",
+  code_fix: "factor_critic",
+  revise_factor: "factor_critic",
+  human_in_the_loop: "human_in_the_loop",
+  finalize_run: "finalize_run",
+};
+
+function projectNode(node: WorkflowNode | null | undefined): GraphNodeId | null {
+  if (!node) return null;
+  return TRACE_TO_GRAPH[node] ?? null;
+}
+
+function getNodeState(id: GraphNodeId, active: GraphNodeId | null, visited: Set<string>): NodeState {
   if (active === id) return "active";
   if (visited.has(id)) return "complete";
   return "pending";
 }
 
 function getEdgeState(
-  from: WorkflowNode, to: WorkflowNode,
-  active: WorkflowNode | null, visited: Set<string>,
+  from: GraphNodeId, to: GraphNodeId,
+  active: GraphNodeId | null, visited: Set<string>,
 ): "pending" | "traversed" | "active" {
   if (visited.has(from) && (visited.has(to) || active === to)) return "traversed";
   if (active === from) return "active";
@@ -149,7 +178,7 @@ const C2 = 400;
 const C3 = 680;
 const C4 = 960;
 
-const NODE_POS: Record<WorkflowNode, [number, number]> = {
+const NODE_POS: Record<GraphNodeId, [number, number]> = {
   supervisor:        [C1, R1Y],
   hypothesis_agent:  [C2, R1Y],
   coding_agent:      [C3, R1Y],
@@ -160,7 +189,7 @@ const NODE_POS: Record<WorkflowNode, [number, number]> = {
 };
 
 // Edges: [from, to, label, direction]
-const EDGES: Array<{ from: WorkflowNode; to: WorkflowNode; label: string; dir: "r" | "d" | "l" }> = [
+const EDGES: Array<{ from: GraphNodeId; to: GraphNodeId; label: string; dir: "r" | "d" | "l" }> = [
   { from: "supervisor",        to: "hypothesis_agent",  label: "brief",       dir: "r" },
   { from: "hypothesis_agent",  to: "coding_agent",      label: "FactorSpec",  dir: "r" },
   { from: "coding_agent",      to: "execution_tool",    label: "script.py",   dir: "r" },
@@ -215,20 +244,20 @@ function DiagramSVG({
   setSelectedId,
 }: {
   snapshot: RunSnapshot | null;
-  hoveredNode: WorkflowNode | null;
-  setHoveredNode: (n: WorkflowNode | null) => void;
-  selectedId: WorkflowNode | null;
-  setSelectedId: (n: WorkflowNode | null) => void;
+  hoveredNode: GraphNodeId | null;
+  setHoveredNode: (n: GraphNodeId | null) => void;
+  selectedId: GraphNodeId | null;
+  setSelectedId: (n: GraphNodeId | null) => void;
 }) {
-  const visited = new Set(snapshot?.workflow_trace ?? []);
-  const active  = snapshot?.current_node ?? null;
+  const visited = new Set((snapshot?.workflow_trace ?? []).map(projectNode).filter(Boolean) as GraphNodeId[]);
+  const active  = projectNode(snapshot?.current_node);
   if (snapshot && snapshot.approval_status !== "not_requested") {
     visited.add("human_in_the_loop");
   }
   const revisionActive = (snapshot?.attempt ?? 0) > 1;
 
   // Which edges connect to the hovered node?
-  function edgeIsHighlighted(from: WorkflowNode, to: WorkflowNode) {
+  function edgeIsHighlighted(from: GraphNodeId, to: GraphNodeId) {
     return hoveredNode !== null && (hoveredNode === from || hoveredNode === to);
   }
 
@@ -569,15 +598,15 @@ function DiagramSVG({
 
 // ─── Node detail panel ────────────────────────────────────────────────────────
 
-function NodeDetailPanel({ nodeId, snapshot }: { nodeId: WorkflowNode; snapshot: RunSnapshot | null }) {
+function NodeDetailPanel({ nodeId, snapshot }: { nodeId: GraphNodeId; snapshot: RunSnapshot | null }) {
   const node    = NODES.find((n) => n.id === nodeId)!;
-  const visited = new Set(snapshot?.workflow_trace ?? []);
-  const active  = snapshot?.current_node ?? null;
+  const visited = new Set((snapshot?.workflow_trace ?? []).map(projectNode).filter(Boolean) as GraphNodeId[]);
+  const active  = projectNode(snapshot?.current_node);
   if (snapshot && snapshot.approval_status !== "not_requested") visited.add("human_in_the_loop");
   const state = getNodeState(nodeId, active, visited);
   const last  = snapshot?.attempts[snapshot.attempts.length - 1] ?? null;
 
-  const content: Partial<Record<WorkflowNode, ReactNode>> = {
+  const content: Partial<Record<GraphNodeId, ReactNode>> = {
     hypothesis_agent: last ? (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <p style={{ margin: 0, fontSize: "0.88rem", fontWeight: 600 }}>{last.factor_spec.name}</p>
@@ -586,7 +615,7 @@ function NodeDetailPanel({ nodeId, snapshot }: { nodeId: WorkflowNode; snapshot:
       </div>
     ) : null,
     coding_agent: last ? (
-      <div className="code-block" style={{ maxHeight: 200 }}>{last.generated_code.script}</div>
+      <div className="code-block" style={{ maxHeight: 200 }}>{last.generated_code?.script ?? "No generated code saved for this attempt."}</div>
     ) : null,
     execution_tool: last ? (
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
@@ -598,7 +627,7 @@ function NodeDetailPanel({ nodeId, snapshot }: { nodeId: WorkflowNode; snapshot:
         ))}
       </div>
     ) : null,
-    factor_critic: last ? (
+    factor_critic: last && last.critique ? (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text)", lineHeight: 1.5 }}>{last.critique.summary}</p>
         <div className="panel-elevated" style={{ padding: "10px 12px" }}>
@@ -633,8 +662,8 @@ function NodeDetailPanel({ nodeId, snapshot }: { nodeId: WorkflowNode; snapshot:
 // ─── WorkflowGraphView ────────────────────────────────────────────────────────
 
 export function WorkflowGraphView({ snapshot }: { snapshot: RunSnapshot | null }) {
-  const [selectedId, setSelectedId]   = useState<WorkflowNode | null>(null);
-  const [hoveredNode, setHoveredNode] = useState<WorkflowNode | null>(null);
+  const [selectedId, setSelectedId]   = useState<GraphNodeId | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<GraphNodeId | null>(null);
   const revisionActive = (snapshot?.attempt ?? 0) > 1;
   const attempt = snapshot?.attempt ?? 0;
 

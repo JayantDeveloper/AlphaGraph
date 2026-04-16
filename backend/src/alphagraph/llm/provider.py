@@ -69,7 +69,9 @@ class LLMProvider(Protocol):
         self,
         *,
         factor_spec: FactorSpec,
+        strategy_config: StrategyConfig | None,
         attempt_number: int,
+        dataset_profile: dict | None,
     ) -> GeneratedCode: ...
 
     def generate_critique(
@@ -96,7 +98,9 @@ class CodingAgent(Protocol):
         self,
         *,
         hypothesis: HypothesisOutput,
+        strategy_config: StrategyConfig | None,
         attempt_number: int,
+        dataset_profile: dict | None,
     ) -> CodegenOutput: ...
 
 
@@ -144,19 +148,20 @@ class DemoLLMProvider:
         self,
         *,
         factor_spec: FactorSpec,
+        strategy_config: StrategyConfig | None = None,
         attempt_number: int,
+        dataset_profile: dict | None = None,
     ) -> GeneratedCode:
+        config = strategy_config or StrategyConfig(
+            expression=factor_spec.expression,
+            neutralization=NeutralizationMode.NONE,
+        )
         return GeneratedCode(
             commentary=(
                 "Generated a minimal backtest script that runs the factor through "
                 "the fixed AlphaGraph harness."
             ),
-            script=_script_template(
-                StrategyConfig(
-                    expression=factor_spec.expression,
-                    neutralization=NeutralizationMode.NONE,
-                )
-            ),
+            script=_script_template(config),
         )
 
     def generate_critique(
@@ -215,17 +220,20 @@ class PromptDrivenLLMProvider:
         self,
         *,
         factor_spec: FactorSpec,
+        strategy_config: StrategyConfig | None = None,
         attempt_number: int,
+        dataset_profile: dict | None = None,
     ) -> GeneratedCode:
-        return self._parse_json(
-            GeneratedCode,
-            "codegen.md",
-            (
-                "Write a runnable Python script for this factor.\n"
-                f"Attempt: {attempt_number}\n"
-                f"Factor JSON:\n{factor_spec.model_dump_json(indent=2)}"
-            ),
-        )
+        parts = [
+            "Write a runnable Python script for this factor.",
+            f"Attempt: {attempt_number}",
+            f"Factor JSON:\n{factor_spec.model_dump_json(indent=2)}",
+        ]
+        if strategy_config:
+            parts.append(f"Strategy Config:\n{strategy_config.model_dump_json(indent=2)}")
+        if dataset_profile:
+            parts.append(f"Dataset Profile:\n{json.dumps(dataset_profile, indent=2, default=str)}")
+        return self._parse_json(GeneratedCode, "codegen.md", "\n\n".join(parts))
 
     def generate_critique(
         self,
@@ -387,23 +395,22 @@ class ResilientLLMProvider:
         self,
         *,
         factor_spec: FactorSpec,
+        strategy_config: StrategyConfig | None = None,
         attempt_number: int,
+        dataset_profile: dict | None = None,
     ) -> GeneratedCode:
+        kwargs = dict(
+            factor_spec=factor_spec,
+            strategy_config=strategy_config,
+            attempt_number=attempt_number,
+            dataset_profile=dataset_profile,
+        )
         if self.primary is None:
-            return self.fallback.generate_code(
-                factor_spec=factor_spec,
-                attempt_number=attempt_number,
-            )
+            return self.fallback.generate_code(**kwargs)
         try:
-            return self.primary.generate_code(
-                factor_spec=factor_spec,
-                attempt_number=attempt_number,
-            )
+            return self.primary.generate_code(**kwargs)
         except Exception:
-            return self.fallback.generate_code(
-                factor_spec=factor_spec,
-                attempt_number=attempt_number,
-            )
+            return self.fallback.generate_code(**kwargs)
 
     def generate_critique(
         self,
@@ -459,19 +466,24 @@ class ProviderBackedCodingAgent:
         self,
         *,
         hypothesis: HypothesisOutput,
+        strategy_config: StrategyConfig | None = None,
         attempt_number: int,
+        dataset_profile: dict | None = None,
     ) -> CodegenOutput:
-        generated_code = self.provider.generate_code(
-            factor_spec=hypothesis.factor_spec,
-            attempt_number=attempt_number,
-        )
-        strategy_config = StrategyConfig(
+        resolved_config = strategy_config or StrategyConfig(
             expression=hypothesis.factor_spec.expression,
             neutralization=NeutralizationMode.NONE,
         )
-        generated_code.script = _script_template(strategy_config)
+        generated_code = self.provider.generate_code(
+            factor_spec=hypothesis.factor_spec,
+            strategy_config=resolved_config,
+            attempt_number=attempt_number,
+            dataset_profile=dataset_profile,
+        )
+        # Use the LLM-generated script as-is. The coding agent sees the real
+        # dataset profile and is responsible for writing code that works with it.
         return CodegenOutput(
-            strategy_config=strategy_config,
+            strategy_config=resolved_config,
             generated_code=generated_code,
         )
 
@@ -590,7 +602,7 @@ def _default_model_for(
     if provider == ProviderKind.GOOGLE:
         return "gemini-2.5-flash" if role == RoleName.HYPOTHESIS else "gemini-2.5-pro"
     if provider == ProviderKind.ANTHROPIC:
-        return "claude-sonnet-4-20250514"
+        return "claude-sonnet-4-6"
     if provider == ProviderKind.DEEPSEEK:
         return "deepseek-reasoner" if role == RoleName.CRITIC else "deepseek-chat"
     return DemoLLMProvider.model
@@ -616,11 +628,15 @@ def _normalize_model_name(
 
     if provider == ProviderKind.ANTHROPIC:
         aliases = {
-            "sonnet-4.6": "claude-sonnet-4-20250514",
-            "sonnet-4-6": "claude-sonnet-4-20250514",
-            "claude-sonnet-4.6": "claude-sonnet-4-20250514",
-            "claude-sonnet-4-6": "claude-sonnet-4-20250514",
-            "claude-sonnet-4": "claude-sonnet-4-20250514",
+            "sonnet-4.6": "claude-sonnet-4-6",
+            "sonnet-4-6": "claude-sonnet-4-6",
+            "claude-sonnet-4.6": "claude-sonnet-4-6",
+            "claude-sonnet-4": "claude-sonnet-4-6",
+            "claude-sonnet-4-20250514": "claude-sonnet-4-6",
+            "opus-4.6": "claude-opus-4-6",
+            "claude-opus-4.6": "claude-opus-4-6",
+            "haiku-4.5": "claude-haiku-4-5-20251001",
+            "claude-haiku-4.5": "claude-haiku-4-5-20251001",
         }
         return aliases.get(normalized, model)
 

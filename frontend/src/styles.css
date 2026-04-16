@@ -498,6 +498,10 @@
   100% { background-position: 200% 0; }
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .animate-fade-up {
   animation: fade-up 0.25s ease forwards;
 }

@@ -77,11 +77,17 @@ def run_backtest_from_expression(
             .fillna(0.0)
             .sort_index()
         )
+        # Turnover: count of position changes divided by 2 (a flip counts as 2 units of diff)
         turnover_series = position_matrix.diff().abs().sum(axis=1) / 2.0
         turnover_series = turnover_series.fillna(0.0)
         daily = daily.merge(turnover_series.rename("turnover"), left_on="date", right_index=True, how="left")
         daily["turnover"] = daily["turnover"].fillna(0.0)
-        daily["transaction_cost"] = daily["turnover"] * (transaction_cost_bps / 10_000.0)
+        # Transaction cost: normalize by breadth so costs are on the same per-position scale
+        # as gross_return (which is mean(position × return) over all active positions).
+        # Without normalisation the raw turnover count overstates costs by ~N/2.
+        daily["transaction_cost"] = (
+            daily["turnover"] / daily["breadth"].clip(lower=1)
+        ) * (transaction_cost_bps / 10_000.0)
         daily["portfolio_return"] = daily["gross_return"] - daily["transaction_cost"]
 
         returns = daily["portfolio_return"].astype(float)
@@ -102,7 +108,11 @@ def run_backtest_from_expression(
             "max_drawdown": float(drawdown.min()) if len(drawdown) else 0.0,
             "trade_count": int(active.shape[0]),
             "breadth": int(daily["breadth"].min()) if len(daily) else 0,
-            "turnover": float(daily["turnover"].mean()) if len(daily) else 0.0,
+            # Normalise turnover to [0, ~2] (fraction of active book that changes per day)
+            # so the hard-gate threshold of 1.5 is on the same scale as the cost formula.
+            "turnover": float(
+                (daily["turnover"] / daily["breadth"].clip(lower=1)).mean()
+            ) if len(daily) else 0.0,
             "num_days": int(daily.shape[0]),
         }
         return ExecutionResult(
@@ -152,7 +162,25 @@ def evaluate_execution(
     if turnover > 1.5:
         hard_gate_reasons.append("turnover_too_high")
 
-    suspicious = (is_sharpe - oos_sharpe > 0.75) or (is_sharpe >= 0.35 and oos_sharpe < 0.10)
+    # Hard-gate failures always take priority — a factor that destroys capital or
+    # churns the book is WEAK regardless of any IS/OOS relationship.
+    if hard_gate_reasons:
+        reasons = [*hard_gate_reasons, "weak_oos_sharpe"] if oos_sharpe < 0.15 else hard_gate_reasons
+        if expression.strip().startswith("-rank(") and oos_sharpe < 0:
+            reasons.append("reversal_signal_negative")
+        return EvaluationResult(
+            execution_status=ExecutionStatus.SUCCEEDED,
+            factor_quality=FactorQuality.WEAK,
+            is_reviewable=False,
+            needs_revision=True,
+            reasons=reasons,
+            scorecard=execution.metrics,
+            summary="The factor violated a hard gate (drawdown, turnover, breadth, or trade count).",
+        )
+
+    # Suspicious = meaningful IS/OOS decay, but only when IS is actually positive.
+    # If both IS and OOS are negative, that's a wrong-direction signal, not overfitting.
+    suspicious = (is_sharpe > 0.05 and is_sharpe - oos_sharpe > 0.75) or (is_sharpe >= 0.35 and oos_sharpe < 0.10)
 
     if suspicious:
         return EvaluationResult(

@@ -59,6 +59,7 @@ class RunState(TypedDict, total=False):
     review_warning: str | None
     artifact_paths: dict[str, str]
     final_report_path: str | None
+    interim_hil_next: str | None  # "revise_factor" | "route_next_candidate" | None
 
 
 class RunStateModel(BaseModel):
@@ -96,6 +97,7 @@ class RunStateModel(BaseModel):
     review_warning: str | None = None
     artifact_paths: dict[str, str] = Field(default_factory=dict)
     final_report_path: str | None = None
+    interim_hil_next: str | None = None
 
 
 def validate_run_state(state: RunState) -> RunStateModel:

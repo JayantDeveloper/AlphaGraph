@@ -19,9 +19,11 @@ from alphagraph.graph.nodes import (
     make_generate_code_node,
     make_validate_dataset_node,
     parse_research_plan,
+    request_interim_review,
     revise_factor,
     route_after_candidate_selection,
     route_after_dataset_validation,
+    route_after_hil,
     route_next_candidate,
     route_post_evaluation,
 )
@@ -64,6 +66,7 @@ def create_workflow(provider: LLMProvider | AgentSuite, base_dir: Path) -> Workf
     builder.add_node("evaluate_results", make_evaluate_results_node(agent_suite, artifact_store))
     builder.add_node("code_fix", code_fix)
     builder.add_node("revise_factor", revise_factor)
+    builder.add_node("request_interim_review", request_interim_review)
     builder.add_node("human_review", human_in_the_loop)
     builder.add_node("finalize_run", make_finalize_node(artifact_store))
 
@@ -96,7 +99,7 @@ def create_workflow(provider: LLMProvider | AgentSuite, base_dir: Path) -> Workf
         route_post_evaluation,
         {
             "code_fix": "code_fix",
-            "revise_factor": "revise_factor",
+            "request_interim_review": "request_interim_review",
             "route_next_candidate": "route_next_candidate",
             "human_review": "human_review",
             "finalize": "finalize_run",
@@ -104,7 +107,18 @@ def create_workflow(provider: LLMProvider | AgentSuite, base_dir: Path) -> Workf
     )
     builder.add_edge("code_fix", "generate_code")
     builder.add_edge("revise_factor", "generate_code")
-    builder.add_edge("human_review", "finalize_run")
+    # Interim review feeds straight into the same HIL node.
+    builder.add_edge("request_interim_review", "human_review")
+    # After HIL, route based on whether this was interim or the final review.
+    builder.add_conditional_edges(
+        "human_review",
+        route_after_hil,
+        {
+            "revise_factor": "revise_factor",
+            "route_next_candidate": "route_next_candidate",
+            "finalize": "finalize_run",
+        },
+    )
     builder.add_edge("finalize_run", END)
 
     return WorkflowRuntime(

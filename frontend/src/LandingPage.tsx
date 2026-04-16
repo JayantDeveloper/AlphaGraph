@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { BrandLogo } from "./BrandLogo";
+import { MarketingFooter, MarketingNav } from "./MarketingShell";
 
 // ─── Fade-in hook ─────────────────────────────────────────────────────────────
 
@@ -78,123 +80,6 @@ function IconArrowRight() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M5 12h14M12 5l7 7-7 7" />
     </svg>
-  );
-}
-
-// ─── Nav ─────────────────────────────────────────────────────────────────────
-
-function LandingNav() {
-  const navigate = useNavigate();
-  const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
-    const handler = () => setScrolled(window.scrollY > 20);
-    window.addEventListener("scroll", handler, { passive: true });
-    return () => window.removeEventListener("scroll", handler);
-  }, []);
-
-  return (
-    <nav
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 100,
-        height: 60,
-        display: "flex",
-        alignItems: "center",
-        transition: "background 200ms ease, border-color 200ms ease",
-        background: scrolled ? "rgba(11,21,32,0.92)" : "transparent",
-        borderBottom: scrolled ? "1px solid var(--border)" : "1px solid transparent",
-        backdropFilter: scrolled ? "blur(12px)" : "none",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1100,
-          margin: "0 auto",
-          padding: "0 24px",
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        {/* Logo */}
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <div
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 8,
-              background: "var(--accent)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "0.85rem",
-              fontWeight: 700,
-              color: "#0d1117",
-              flexShrink: 0,
-            }}
-          >
-            αG
-          </div>
-          <span style={{ fontWeight: 700, fontSize: "0.95rem", letterSpacing: "-0.01em" }}>
-            AlphaGraph
-          </span>
-        </div>
-
-        {/* Links */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <a
-            href="#features"
-            style={{ fontSize: "0.82rem", color: "var(--muted)", textDecoration: "none", padding: "6px 12px" }}
-            onMouseEnter={(e) => ((e.target as HTMLElement).style.color = "var(--text)")}
-            onMouseLeave={(e) => ((e.target as HTMLElement).style.color = "var(--muted)")}
-          >
-            Features
-          </a>
-          <a
-            href="#how-it-works"
-            style={{ fontSize: "0.82rem", color: "var(--muted)", textDecoration: "none", padding: "6px 12px" }}
-            onMouseEnter={(e) => ((e.target as HTMLElement).style.color = "var(--text)")}
-            onMouseLeave={(e) => ((e.target as HTMLElement).style.color = "var(--muted)")}
-          >
-            How it works
-          </a>
-          <button
-            onClick={() => navigate("/app")}
-            style={{
-              marginLeft: 8,
-              padding: "7px 18px",
-              background: "var(--accent)",
-              color: "#0d1117",
-              border: "none",
-              borderRadius: 8,
-              fontSize: "0.82rem",
-              fontWeight: 700,
-              cursor: "pointer",
-              fontFamily: "inherit",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              transition: "filter 150ms ease, transform 150ms ease",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget.style.filter = "brightness(1.1)");
-              (e.currentTarget.style.transform = "translateY(-1px)");
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget.style.filter = "brightness(1)");
-              (e.currentTarget.style.transform = "translateY(0)");
-            }}
-          >
-            Try Now <IconArrowRight />
-          </button>
-        </div>
-      </div>
-    </nav>
   );
 }
 
@@ -311,7 +196,7 @@ function HeroSection() {
             Try Now <IconArrowRight />
           </button>
           <a
-            href="#how-it-works"
+            href="/docs"
             style={{
               padding: "12px 28px",
               background: "transparent",
@@ -337,7 +222,7 @@ function HeroSection() {
               (e.currentTarget.style.background = "transparent");
             }}
           >
-            See how it works <IconChevronRight />
+            Read Docs <IconChevronRight />
           </a>
         </div>
 
@@ -538,113 +423,85 @@ function FeaturesSection() {
   );
 }
 
-// ─── How It Works ─────────────────────────────────────────────────────────────
-
-const HOW_STEPS = [
-  { n: "01", label: "Write a Research Brief", desc: "Describe the factor you want to research in plain English. Optionally upload a CSV dataset or let AlphaGraph use its bundled demo data." },
-  { n: "02", label: "Supervisor Dispatches Agents", desc: "The supervisor node reads your brief and orchestrates the downstream agents, deciding which nodes to activate in sequence." },
-  { n: "03", label: "Hypothesis Agent Specifies the Factor", desc: "A specialized agent produces a structured factor spec: expression, universe, rebalance frequency, and a written thesis." },
-  { n: "04", label: "Coding Agent Writes the Backtest", desc: "The factor expression is turned into a runnable Python backtest script — no manual coding required." },
-  { n: "05", label: "Execution Engine Runs It", desc: "The script is executed against your dataset. Raw metrics — Sharpe, IC, max drawdown, annual return — are captured." },
-  { n: "06", label: "Critic Evaluates & May Revise", desc: "A critic agent scores the results. If quality thresholds aren't met, it writes revision guidance and the loop repeats." },
-  { n: "07", label: "You Approve the Final Factor", desc: "Once the critic is satisfied, the run pauses for your review. Approve to save the artifact bundle, or reject to restart." },
-];
-
-function HowItWorksSection() {
-  const { ref, visible } = useFadeIn(0.08);
-
-  return (
-    <section id="how-it-works" style={{ padding: "100px 24px", background: "rgba(15,30,46,0.6)" }}>
-      <div style={{ maxWidth: 760, margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: 56 }}>
-          <p className="eyebrow" style={{ marginBottom: 12 }}>How it works</p>
-          <h2
-            style={{
-              margin: "0 auto 16px",
-              fontSize: "clamp(1.8rem, 3vw, 2.4rem)",
-              fontWeight: 800,
-              letterSpacing: "-0.025em",
-              color: "var(--text)",
-            }}
-          >
-            Seven stages, zero manual work
-          </h2>
-        </div>
-
-        <div
-          ref={ref}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            opacity: visible ? 1 : 0,
-            transform: visible ? "translateY(0)" : "translateY(24px)",
-            transition: "opacity 0.55s ease, transform 0.55s ease",
-          }}
-        >
-          {HOW_STEPS.map((step, i) => (
-            <div key={step.n} style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
-              {/* Left: number + connector */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, width: 36 }}>
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: "50%",
-                    background: "var(--elevated)",
-                    border: "1.5px solid var(--border-strong)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    color: "var(--accent)",
-                    fontFamily: "monospace",
-                    flexShrink: 0,
-                  }}
-                >
-                  {step.n}
-                </div>
-                {i < HOW_STEPS.length - 1 && (
-                  <div style={{ width: 1.5, flex: 1, minHeight: 32, background: "var(--border)", margin: "4px 0" }} />
-                )}
-              </div>
-
-              {/* Right: content */}
-              <div style={{ paddingBottom: i < HOW_STEPS.length - 1 ? 28 : 0, paddingTop: 6 }}>
-                <h4 style={{ margin: "0 0 6px", fontSize: "0.95rem", fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em" }}>
-                  {step.label}
-                </h4>
-                <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--muted)", lineHeight: 1.6 }}>
-                  {step.desc}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 // ─── Demo Preview ─────────────────────────────────────────────────────────────
 
+const DEMO_LABELS = ["Supervisor","Hypothesis","Coding","Execution","Critic","Approval","Finalize"];
+const DEMO_NODES  = ["supervisor","hypothesis_agent","coding_agent","execution_tool","factor_critic","human_in_the_loop","finalize_run"];
+const DEMO_MSGS   = [
+  "Orchestrating research pipeline…",
+  "Generating factor hypothesis…",
+  "Writing backtest script…",
+  "Running backtest on equity data…",
+  "Critiquing factor performance…",
+  "Awaiting human approval…",
+  "Saving artifact bundle…",
+];
+
 function DemoSection() {
-  const { ref, visible } = useFadeIn(0.08);
+  const { ref: fadeRef, visible } = useFadeIn(0.08);
+
+  // animStep: -1 = idle/between runs, 0–6 = step active, 7 = complete
+  const [animStep, setAnimStep] = useState(-1);
+  const [sharpe,   setSharpe]   = useState(0);
+  const [annRet,   setAnnRet]   = useState(0);
+  const [maxDD,    setMaxDD]    = useState(0);
+
+  // Drive the looping pipeline animation
+  useEffect(() => {
+    if (!visible) return;
+    let t: ReturnType<typeof setTimeout>;
+
+    function run(step: number) {
+      if (step === 0) { setSharpe(0); setAnnRet(0); setMaxDD(0); }
+      setAnimStep(step);
+      if (step < 7) {
+        t = setTimeout(() => run(step + 1), 680);
+      } else {
+        // Hold "complete" state, then idle briefly before looping
+        t = setTimeout(() => {
+          setAnimStep(-1);
+          t = setTimeout(() => run(0), 900);
+        }, 3500);
+      }
+    }
+
+    t = setTimeout(() => run(0), 700);
+    return () => clearTimeout(t);
+  }, [visible]);
+
+  // Count-up metrics when run completes
+  useEffect(() => {
+    if (animStep !== 7) return;
+    let s = 0;
+    const N = 50;
+    const timer = setInterval(() => {
+      s++;
+      const e = 1 - Math.pow(1 - s / N, 3);
+      setSharpe(+(1.42 * e).toFixed(2));
+      setAnnRet(+(18.3 * e).toFixed(1));
+      setMaxDD(+(12.1 * e).toFixed(1));
+      if (s >= N) clearInterval(timer);
+    }, 28);
+    return () => clearInterval(timer);
+  }, [animStep]);
+
+  const isComplete = animStep === 7;
+  const isRunning  = animStep >= 0 && animStep < 7;
+  const status     = isComplete ? "completed" : isRunning ? "running" : "idle";
+
+  const stepSt = (i: number): "complete" | "active" | "pending" =>
+    isComplete || i < animStep ? "complete" : i === animStep ? "active" : "pending";
+
+  const metaPhase    = isComplete ? "finalized"    : isRunning ? "running"                  : "idle";
+  const metaNode     = isComplete ? "finalize_run" : isRunning ? DEMO_NODES[animStep] : "—";
+  const metaDecision = isComplete ? "approved"     : "—";
 
   return (
     <section style={{ padding: "100px 24px" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 48 }}>
           <p className="eyebrow" style={{ marginBottom: 12 }}>Live example</p>
-          <h2
-            style={{
-              margin: "0 auto 16px",
-              fontSize: "clamp(1.8rem, 3vw, 2.4rem)",
-              fontWeight: 800,
-              letterSpacing: "-0.025em",
-              color: "var(--text)",
-            }}
-          >
+          <h2 style={{ margin: "0 auto 16px", fontSize: "clamp(1.8rem, 3vw, 2.4rem)", fontWeight: 800, letterSpacing: "-0.025em", color: "var(--text)" }}>
             See a completed research run
           </h2>
           <p style={{ fontSize: "1rem", color: "var(--muted)", maxWidth: 460, margin: "0 auto", lineHeight: 1.6 }}>
@@ -654,58 +511,28 @@ function DemoSection() {
 
         {/* Mock app UI */}
         <div
-          ref={ref}
+          ref={fadeRef}
           style={{
             opacity: visible ? 1 : 0,
             transform: visible ? "translateY(0) scale(1)" : "translateY(32px) scale(0.98)",
             transition: "opacity 0.6s ease, transform 0.6s ease",
           }}
         >
-          {/* Mock browser chrome */}
-          <div
-            style={{
-              background: "var(--elevated)",
-              border: "1px solid var(--border)",
-              borderRadius: "12px 12px 0 0",
-              padding: "10px 14px",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
+          {/* Browser chrome */}
+          <div style={{ background: "var(--elevated)", border: "1px solid var(--border)", borderRadius: "12px 12px 0 0", padding: "10px 14px", display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: "rgba(248,113,113,0.6)" }} />
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: "rgba(251,191,36,0.5)" }} />
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: "rgba(74,222,128,0.5)" }} />
-            <div
-              style={{
-                marginLeft: 8,
-                flex: 1,
-                maxWidth: 320,
-                background: "var(--raised)",
-                border: "1px solid var(--border)",
-                borderRadius: 5,
-                padding: "3px 10px",
-                fontSize: "0.72rem",
-                color: "var(--subtle)",
-              }}
-            >
+            <div style={{ marginLeft: 8, flex: 1, maxWidth: 320, background: "var(--raised)", border: "1px solid var(--border)", borderRadius: 5, padding: "3px 10px", fontSize: "0.72rem", color: "var(--subtle)" }}>
               alphagraph.local
             </div>
           </div>
 
-          {/* Mock nav */}
-          <div
-            style={{
-              background: "var(--surface)",
-              borderLeft: "1px solid var(--border)",
-              borderRight: "1px solid var(--border)",
-              borderBottom: "1px solid var(--border)",
-            }}
-          >
+          <div style={{ background: "var(--surface)", borderLeft: "1px solid var(--border)", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
             {/* Top bar */}
             <div style={{ height: 48, display: "flex", alignItems: "center", gap: 16, padding: "0 20px", borderBottom: "1px solid var(--border)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                <div style={{ width: 22, height: 22, borderRadius: 6, background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 700, color: "#0d1117" }}>αG</div>
+                <BrandLogo size={22} radius={6} />
                 <span style={{ fontWeight: 700, fontSize: "0.82rem" }}>AlphaGraph</span>
               </div>
               <div style={{ display: "flex", gap: 2, background: "var(--raised)", border: "1px solid var(--border)", borderRadius: 7, padding: 2 }}>
@@ -713,25 +540,53 @@ function DemoSection() {
                 <div style={{ padding: "4px 12px", fontSize: "0.75rem", fontWeight: 500, color: "var(--muted)" }}>Workflow Graph</div>
               </div>
               <div style={{ flex: 1 }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 9px", borderRadius: 99, background: "var(--success-dim)", border: "1px solid rgba(74,222,128,0.2)" }}>
-                <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--success)" }} />
-                <span style={{ fontSize: "0.68rem", fontWeight: 500, color: "var(--success)" }}>completed</span>
+              {/* Animated status pill */}
+              <div style={{
+                display: "flex", alignItems: "center", gap: 6, padding: "3px 9px", borderRadius: 99,
+                background: isComplete ? "var(--success-dim)" : isRunning ? "rgba(156,213,255,0.08)" : "var(--raised)",
+                border: `1px solid ${isComplete ? "rgba(74,222,128,0.2)" : isRunning ? "rgba(156,213,255,0.2)" : "var(--border)"}`,
+                transition: "background 400ms ease, border-color 400ms ease",
+              }}>
+                <div style={{
+                  width: 5, height: 5, borderRadius: "50%",
+                  background: isComplete ? "var(--success)" : isRunning ? "var(--accent)" : "var(--subtle)",
+                  boxShadow: isRunning ? "0 0 6px var(--accent)" : "none",
+                  animation: isRunning ? "pulse-dot 1.4s ease-in-out infinite" : "none",
+                  transition: "background 300ms ease",
+                }} />
+                <span style={{ fontSize: "0.68rem", fontWeight: 500, color: isComplete ? "var(--success)" : isRunning ? "var(--accent)" : "var(--subtle)", transition: "color 300ms ease" }}>
+                  {status}
+                </span>
               </div>
             </div>
 
-            {/* Workflow bar */}
+            {/* Animated workflow bar */}
             <div style={{ height: 38, display: "flex", alignItems: "center", padding: "0 20px", background: "var(--bg)", borderBottom: "1px solid var(--border)", gap: 0 }}>
-              {["Supervisor","Hypothesis","Coding","Execution","Critic","Approval","Finalize"].map((label, i, arr) => {
-                const isLast = i === arr.length - 1;
+              {DEMO_LABELS.map((label, i) => {
+                const st = stepSt(i);
+                const isLast = i === DEMO_LABELS.length - 1;
                 return (
                   <div key={label} style={{ display: "flex", alignItems: "center", flex: isLast ? "none" : 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                      <div style={{ width: 13, height: 13, borderRadius: "50%", background: "rgba(74,222,128,0.1)", border: "1.5px solid var(--success)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--success)" }}>
-                        <IconCheck />
+                      <div style={{
+                        width: 13, height: 13, borderRadius: "50%",
+                        background: st === "complete" ? "rgba(74,222,128,0.1)" : st === "active" ? "rgba(156,213,255,0.1)" : "var(--surface)",
+                        border: `1.5px solid ${st === "complete" ? "var(--success)" : st === "active" ? "var(--accent)" : "var(--border-strong)"}`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        color: st === "complete" ? "var(--success)" : "var(--accent)",
+                        boxShadow: st === "active" ? "0 0 0 3px rgba(156,213,255,0.15)" : "none",
+                        transition: "all 300ms ease",
+                      }}>
+                        {st === "complete" && <IconCheck />}
+                        {st === "active" && <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--accent)", animation: "pulse-dot 1.4s ease-in-out infinite" }} />}
                       </div>
-                      <span style={{ fontSize: "0.64rem", fontWeight: 500, color: "var(--text)", whiteSpace: "nowrap" }}>{label}</span>
+                      <span style={{ fontSize: "0.64rem", fontWeight: st === "active" ? 600 : 500, color: st === "complete" ? "var(--text)" : st === "active" ? "var(--accent)" : "var(--subtle)", whiteSpace: "nowrap", transition: "color 300ms ease" }}>
+                        {label}
+                      </span>
                     </div>
-                    {!isLast && <div style={{ flex: 1, height: 1, background: "rgba(74,222,128,0.25)", margin: "0 5px" }} />}
+                    {!isLast && (
+                      <div style={{ flex: 1, height: 1, background: st === "complete" ? "rgba(74,222,128,0.3)" : "var(--border)", margin: "0 5px", transition: "background 400ms ease" }} />
+                    )}
                   </div>
                 );
               })}
@@ -747,74 +602,101 @@ function DemoSection() {
                 </div>
                 <div style={{ background: "var(--raised)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
                   <p style={{ fontSize: "0.62rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)", margin: "0 0 6px" }}>Controls</p>
-                  <div style={{ background: "var(--accent)", borderRadius: 6, padding: "6px 10px", textAlign: "center", fontSize: "0.75rem", fontWeight: 700, color: "#0d1117" }}>Run Research</div>
+                  <div style={{
+                    background: isRunning ? "var(--raised)" : "var(--accent)",
+                    color: isRunning ? "var(--muted)" : "#0d1117",
+                    borderRadius: 6, padding: "6px 10px", textAlign: "center", fontSize: "0.75rem", fontWeight: 700,
+                    transition: "background 400ms ease, color 400ms ease",
+                  }}>
+                    {isRunning ? "Running…" : "Run Research"}
+                  </div>
                 </div>
+                {/* Animated metadata */}
                 <div style={{ background: "var(--raised)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px" }}>
-                  {[{ l: "Phase", v: "finalized" }, { l: "Node", v: "finalize_run" }, { l: "Decision", v: "approved" }].map(({ l, v }) => (
+                  {[{ l: "Phase", v: metaPhase }, { l: "Node", v: metaNode }, { l: "Decision", v: metaDecision }].map(({ l, v }) => (
                     <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: l !== "Phase" ? "1px solid var(--border)" : "none" }}>
                       <span style={{ fontSize: "0.68rem", color: "var(--muted)" }}>{l}</span>
-                      <span style={{ fontSize: "0.68rem", color: "var(--text)", fontFamily: "monospace" }}>{v}</span>
+                      <span style={{
+                        fontSize: "0.68rem", fontFamily: "monospace",
+                        color: v === "finalized" || v === "approved" ? "var(--success)" : v === "running" ? "var(--accent)" : "var(--text)",
+                        transition: "color 300ms ease",
+                      }}>{v}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Right panel - artifact */}
+              {/* Right panel */}
               <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <p style={{ fontSize: "0.62rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--accent)", margin: 0 }}>Artifact</p>
                   <div style={{ display: "flex", gap: 2, background: "var(--raised)", border: "1px solid var(--border)", borderRadius: 6, padding: 2 }}>
-                    {["Factor","Code","Metrics","Critique","Final"].map((t, i) => (
-                      <div key={t} style={{ padding: "3px 9px", borderRadius: 4, background: i === 4 ? "var(--elevated)" : "transparent", fontSize: "0.68rem", fontWeight: i === 4 ? 600 : 400, color: i === 4 ? "var(--text)" : "var(--muted)" }}>{t}</div>
+                    {["Factor","Code","Metrics","Critique","Final"].map((tab, i) => (
+                      <div key={tab} style={{ padding: "3px 9px", borderRadius: 4, background: i === 4 ? "var(--elevated)" : "transparent", fontSize: "0.68rem", fontWeight: i === 4 ? 600 : 400, color: i === 4 ? "var(--text)" : "var(--muted)" }}>{tab}</div>
                     ))}
                   </div>
                 </div>
 
-                {/* Final tab content mock */}
-                <div style={{ background: "var(--success-dim)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 9, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(74,222,128,0.15)", border: "1.5px solid var(--success)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--success)", flexShrink: 0 }}>
-                    <IconCheck />
-                  </div>
-                  <div>
-                    <p style={{ margin: "0 0 2px", fontSize: "0.82rem", fontWeight: 700, color: "var(--success)" }}>Run Finalized</p>
-                    <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>Factor approved and artifact bundle saved</p>
-                  </div>
-                </div>
-
-                <div>
-                  <p style={{ fontSize: "0.62rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)", margin: "0 0 5px" }}>Approved Factor</p>
-                  <p style={{ margin: "0 0 6px", fontSize: "0.88rem", fontWeight: 700, color: "var(--text)" }}>Momentum-Quality Blend</p>
-                  <div style={{ background: "var(--elevated)", border: "1px solid var(--border)", borderRadius: 5, padding: "7px 10px", fontFamily: "monospace", fontSize: "0.74rem", color: "var(--accent)" }}>
-                    rank(close / close.shift(20)) * rank(net_income / total_assets)
-                  </div>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                  {[
-                    { label: "Sharpe Ratio", value: "1.42" },
-                    { label: "Annual Return", value: "+18.3%" },
-                    { label: "Max Drawdown", value: "−12.1%" },
-                  ].map(({ label, value }) => (
-                    <div key={label} style={{ background: "var(--raised)", border: "1px solid var(--border)", borderRadius: 7, padding: "9px 11px" }}>
-                      <p style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)", margin: "0 0 4px" }}>{label}</p>
-                      <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700, fontFamily: "monospace", color: "var(--text)" }}>{value}</p>
+                {isRunning ? (
+                  /* Running state — spinner + current step message */
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
+                    <div style={{ width: 36, height: 36, animation: "spin 1s linear infinite" }}>
+                      <svg width="36" height="36" viewBox="0 0 36 36">
+                        <circle cx="18" cy="18" r="14" fill="none" stroke="var(--border)" strokeWidth="2.5"/>
+                        <circle cx="18" cy="18" r="14" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeDasharray="22 66" strokeLinecap="round"/>
+                      </svg>
                     </div>
-                  ))}
-                </div>
+                    <div style={{ textAlign: "center" }}>
+                      <p style={{ margin: "0 0 4px", fontSize: "0.82rem", fontWeight: 600, color: "var(--accent)" }}>
+                        {DEMO_MSGS[animStep]}
+                      </p>
+                      <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--subtle)" }}>
+                        {DEMO_LABELS[animStep]} · step {animStep + 1} of 7
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  /* Complete / idle state — final artifact */
+                  <>
+                    <div style={{ background: "var(--success-dim)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 9, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(74,222,128,0.15)", border: "1.5px solid var(--success)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--success)", flexShrink: 0 }}>
+                        <IconCheck />
+                      </div>
+                      <div>
+                        <p style={{ margin: "0 0 2px", fontSize: "0.82rem", fontWeight: 700, color: "var(--success)" }}>Run Finalized</p>
+                        <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>Factor approved and artifact bundle saved</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p style={{ fontSize: "0.62rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)", margin: "0 0 5px" }}>Approved Factor</p>
+                      <p style={{ margin: "0 0 6px", fontSize: "0.88rem", fontWeight: 700, color: "var(--text)" }}>Momentum-Quality Blend</p>
+                      <div style={{ background: "var(--elevated)", border: "1px solid var(--border)", borderRadius: 5, padding: "7px 10px", fontFamily: "monospace", fontSize: "0.74rem", color: "var(--accent)" }}>
+                        rank(close / close.shift(20)) * rank(net_income / total_assets)
+                      </div>
+                    </div>
+
+                    {/* Counting metrics */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                      {[
+                        { label: "Sharpe Ratio",  value: isComplete ? sharpe.toFixed(2) : "1.42" },
+                        { label: "Annual Return", value: isComplete ? `+${annRet.toFixed(1)}%` : "+18.3%" },
+                        { label: "Max Drawdown",  value: isComplete ? `−${maxDD.toFixed(1)}%` : "−12.1%" },
+                      ].map(({ label, value }) => (
+                        <div key={label} style={{ background: "var(--raised)", border: "1px solid var(--border)", borderRadius: 7, padding: "9px 11px" }}>
+                          <p style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)", margin: "0 0 4px" }}>{label}</p>
+                          <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700, fontFamily: "monospace", color: "var(--text)" }}>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Bottom border rounding */}
-          <div
-            style={{
-              background: "var(--surface)",
-              border: "1px solid var(--border)",
-              borderTop: "none",
-              borderRadius: "0 0 12px 12px",
-              height: 8,
-            }}
-          />
+          {/* Bottom rounding */}
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderTop: "none", borderRadius: "0 0 12px 12px", height: 8 }} />
         </div>
       </div>
     </section>
@@ -923,54 +805,6 @@ function CTASection() {
   );
 }
 
-// ─── Footer ───────────────────────────────────────────────────────────────────
-
-function LandingFooter() {
-  return (
-    <footer
-      style={{
-        borderTop: "1px solid var(--border)",
-        padding: "24px",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1100,
-          margin: "0 auto",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div
-            style={{
-              width: 22,
-              height: 22,
-              borderRadius: 6,
-              background: "var(--accent)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "0.65rem",
-              fontWeight: 700,
-              color: "#0d1117",
-            }}
-          >
-            αG
-          </div>
-          <span style={{ fontSize: "0.8rem", color: "var(--muted)", fontWeight: 500 }}>AlphaGraph</span>
-        </div>
-        <p style={{ fontSize: "0.75rem", color: "var(--subtle)", margin: 0 }}>
-          Autonomous factor research powered by agentic AI.
-        </p>
-      </div>
-    </footer>
-  );
-}
-
 // ─── Root export ──────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
@@ -979,13 +813,12 @@ export default function LandingPage() {
       className="bg-grid"
       style={{ minHeight: "100vh", background: "var(--bg)", overflowX: "hidden" }}
     >
-      <LandingNav />
+      <MarketingNav />
       <HeroSection />
       <FeaturesSection />
-      <HowItWorksSection />
       <DemoSection />
       <CTASection />
-      <LandingFooter />
+      <MarketingFooter />
     </div>
   );
 }
