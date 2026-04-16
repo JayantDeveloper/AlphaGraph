@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { AttemptRecord, RunSnapshot, WorkflowNode } from "./api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -59,6 +59,18 @@ function DotIcon() {
   return <div style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />;
 }
 
+// ─── Workflow steps (shared between nav bar and rail) ─────────────────────────
+
+const RAIL_STEPS: Array<{ node: WorkflowNode; label: string; desc: string }> = [
+  { node: "supervisor", label: "Supervisor", desc: "Orchestrates the research pipeline" },
+  { node: "hypothesis_agent", label: "Hypothesis", desc: "Generates factor specification" },
+  { node: "coding_agent", label: "Coding", desc: "Writes backtest script" },
+  { node: "execution_tool", label: "Execution", desc: "Runs backtest on equities data" },
+  { node: "factor_critic", label: "Critic", desc: "Evaluates and critiques results" },
+  { node: "human_in_the_loop", label: "Approval", desc: "Human review checkpoint" },
+  { node: "finalize_run", label: "Finalize", desc: "Saves artifact bundle to disk" },
+];
+
 // ─── StatusHeader ─────────────────────────────────────────────────────────────
 
 export function StatusHeader({
@@ -66,11 +78,15 @@ export function StatusHeader({
   busy,
   activeTab,
   onTabChange,
+  onRun,
+  hasDataset,
 }: {
   snapshot: RunSnapshot | null;
   busy: boolean;
   activeTab: MainTab;
   onTabChange: (tab: MainTab) => void;
+  onRun: () => void;
+  hasDataset: boolean;
 }) {
   const status = snapshot?.status ?? (busy ? "running" : "idle");
   const pillClass =
@@ -82,17 +98,22 @@ export function StatusHeader({
           ? "status-pill status-approval"
           : "status-pill";
 
+  const visited = new Set(snapshot?.workflow_trace ?? []);
+  const activeNode = snapshot?.current_node;
+  if (snapshot && snapshot.approval_status !== "not_requested") visited.add("human_in_the_loop");
+
   return (
     <header
       className="sticky top-0 z-50"
       style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}
     >
+      {/* ── Main nav row ──────────────────────────────────────────────── */}
       <div
         className="max-w-[1400px] mx-auto px-5"
         style={{ height: 52, display: "flex", alignItems: "center", gap: 20 }}
       >
         {/* Logo */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 4, flexShrink: 0 }}>
           <div
             style={{
               width: 26,
@@ -110,13 +131,13 @@ export function StatusHeader({
           >
             αG
           </div>
-          <span style={{ fontWeight: 600, fontSize: "0.88rem", letterSpacing: "-0.01em" }}>
+          <span style={{ fontWeight: 600, fontSize: "0.88rem", letterSpacing: "-0.01em", whiteSpace: "nowrap" }}>
             AlphaGraph
           </span>
         </div>
 
         {/* Main tabs */}
-        <div className="tab-bar">
+        <div className="tab-bar" style={{ flexShrink: 0 }}>
           <button
             className={`tab-item${activeTab === "run" ? " active" : ""}`}
             onClick={() => onTabChange("run")}
@@ -133,9 +154,41 @@ export function StatusHeader({
 
         <div style={{ flex: 1 }} />
 
+        {/* Run button */}
+        <button
+          onClick={onRun}
+          disabled={busy}
+          style={{
+            flexShrink: 0,
+            padding: "6px 18px",
+            background: busy ? "var(--raised)" : "var(--success)",
+            color: busy ? "var(--muted)" : "#0b1520",
+            border: busy ? "1px solid var(--border)" : "1px solid transparent",
+            borderRadius: 8,
+            fontSize: "0.8rem",
+            fontWeight: 700,
+            cursor: busy ? "not-allowed" : "pointer",
+            fontFamily: "inherit",
+            transition: "filter 150ms ease, transform 150ms ease",
+            boxShadow: busy ? "none" : "0 0 10px rgba(74,222,128,0.25)",
+          }}
+          onMouseEnter={(e) => {
+            if (!busy) {
+              e.currentTarget.style.filter = "brightness(1.08)";
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.filter = "brightness(1)";
+            e.currentTarget.style.transform = "translateY(0)";
+          }}
+        >
+          {busy ? "Running…" : hasDataset ? "Run Dataset" : "Run"}
+        </button>
+
         {/* Run metadata */}
         {snapshot && (
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
             <span style={{ fontSize: "0.72rem", color: "var(--muted)", fontFamily: "monospace" }}>
               {snapshot.run_id.slice(0, 8)}
             </span>
@@ -148,11 +201,62 @@ export function StatusHeader({
         )}
 
         {/* Status pill */}
-        <div className={pillClass}>
+        <div className={pillClass} style={{ flexShrink: 0 }}>
           <div className="dot" />
           <span style={{ textTransform: "capitalize" }}>
             {snapshot?.approval_status === "pending" ? "awaiting approval" : status}
           </span>
+        </div>
+      </div>
+
+      {/* ── Workflow progress bar ──────────────────────────────────────── */}
+      <div style={{ borderTop: "1px solid var(--border)", background: "var(--bg)" }}>
+        <div
+          className="max-w-[1400px] mx-auto px-5"
+          style={{ height: 42, display: "flex", alignItems: "center" }}
+        >
+          {RAIL_STEPS.map((step, i) => {
+            const isActive = activeNode === step.node;
+            const isComplete = visited.has(step.node) && !isActive;
+            const isLast = i === RAIL_STEPS.length - 1;
+
+            return (
+              <Fragment key={step.node}>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                  <div
+                    className={`rail-dot${isActive ? " active" : isComplete ? " complete" : ""}`}
+                    style={{ width: 16, height: 16 }}
+                  >
+                    {isComplete && <CheckIcon size={8} />}
+                    {isActive && (
+                      <div style={{ width: 5, height: 5, borderRadius: "50%", background: "currentColor" }} />
+                    )}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "0.71rem",
+                      fontWeight: isActive ? 600 : 500,
+                      color: isActive ? "var(--accent)" : isComplete ? "var(--text)" : "var(--subtle)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {step.label}
+                  </span>
+                </div>
+                {!isLast && (
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 1,
+                      minWidth: 8,
+                      background: isComplete ? "rgba(74,222,128,0.3)" : "var(--border)",
+                      margin: "0 8px",
+                    }}
+                  />
+                )}
+              </Fragment>
+            );
+          })}
         </div>
       </div>
     </header>
@@ -160,16 +264,6 @@ export function StatusHeader({
 }
 
 // ─── WorkflowRail ─────────────────────────────────────────────────────────────
-
-const RAIL_STEPS: Array<{ node: WorkflowNode; label: string; desc: string }> = [
-  { node: "supervisor", label: "Supervisor", desc: "Orchestrates the research pipeline" },
-  { node: "hypothesis_agent", label: "Hypothesis", desc: "Generates factor specification" },
-  { node: "coding_agent", label: "Coding", desc: "Writes backtest script" },
-  { node: "execution_tool", label: "Execution", desc: "Runs backtest on equities data" },
-  { node: "factor_critic", label: "Critic", desc: "Evaluates and critiques results" },
-  { node: "human_in_the_loop", label: "Approval", desc: "Human review checkpoint" },
-  { node: "finalize_run", label: "Finalize", desc: "Saves artifact bundle to disk" },
-];
 
 export function WorkflowRail({ snapshot }: { snapshot: RunSnapshot | null }) {
   const visited = new Set(snapshot?.workflow_trace ?? []);
@@ -267,7 +361,7 @@ export function AttemptComparisonCard({ snapshot }: { snapshot: RunSnapshot }) {
   return (
     <div className="panel" style={{ padding: 16 }}>
       <p className="eyebrow">Revision Comparison</p>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
         {attempts.map((attempt) => {
           const metrics = getKeyMetrics(attempt);
           return (
@@ -354,22 +448,23 @@ export function ArtifactPane({ snapshot }: { snapshot: RunSnapshot | null }) {
   ];
 
   return (
-    <div className="panel animate-fade-up" style={{ display: "flex", flexDirection: "column", minHeight: 520 }}>
+    <div className="panel animate-fade-up" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* Tab bar header */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "12px 16px 0",
+          padding: "10px 16px",
           borderBottom: "1px solid var(--border)",
           gap: 8,
+          flexShrink: 0,
         }}
       >
         <p className="eyebrow" style={{ margin: 0 }}>
           Artifact
         </p>
-        <div className="tab-bar" style={{ marginBottom: -1 }}>
+        <div className="tab-bar">
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -384,7 +479,7 @@ export function ArtifactPane({ snapshot }: { snapshot: RunSnapshot | null }) {
       </div>
 
       {/* Content area */}
-      <div style={{ flex: 1, padding: 16, overflow: "auto" }}>
+      <div style={{ flex: 1, padding: 16, overflow: "auto", display: "flex", flexDirection: "column" }}>
         {!snapshot ? (
           <EmptyArtifactState />
         ) : !latest && activeTab !== "final" ? (
@@ -411,8 +506,7 @@ function EmptyArtifactState() {
   return (
     <div
       style={{
-        height: "100%",
-        minHeight: 400,
+        flex: 1,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",

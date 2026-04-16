@@ -271,9 +271,12 @@ function DiagramSVG({
           </marker>
         ))}
 
-        {/* ── Revision-arc left-pointing marker ── */}
+        {/* ── Revision-arc left-pointing markers (bright + dim) ── */}
         <marker id="arr-rev-left" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto">
           <path d="M 8,0 L 0,4 L 8,8 Z" fill="#fbbf24" />
+        </marker>
+        <marker id="arr-rev-left-dim" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto">
+          <path d="M 8,0 L 0,4 L 8,8 Z" fill="#b45309" />
         </marker>
 
         {/* ── CSS animations injected into SVG ── */}
@@ -355,7 +358,7 @@ function DiagramSVG({
             stroke={revisionActive ? "#fde047" : "#b45309"}
             strokeWidth={revisionActive ? 4 : 2.2}
             strokeDasharray={revisionActive ? undefined : "7 6"}
-            markerEnd={revisionActive ? "url(#arr-rev-left)" : undefined}
+            markerEnd={revisionActive ? "url(#arr-rev-left)" : "url(#arr-rev-left-dim)"}
             className={revisionActive ? "rev-dash" : undefined}
           />
           {/* Label pill — floats above the arc peak, clear of the cards */}
@@ -460,6 +463,13 @@ function DiagramSVG({
               />
             )}
 
+            {/* ── Clip path matching node shape ── */}
+            <defs>
+              <clipPath id={`nc-${node.id}`}>
+                <rect x={nx} y={ny} width={NW} height={NH} rx={NR} />
+              </clipPath>
+            </defs>
+
             {/* ── Node body ── */}
             <rect
               x={nx} y={ny}
@@ -470,13 +480,13 @@ function DiagramSVG({
               strokeWidth={borderWidth}
             />
 
-            {/* ── Left accent bar ── */}
+            {/* ── Left accent bar (clipped to node shape) ── */}
             <rect
               x={nx} y={ny}
               width={4} height={NH}
-              rx={2}
               fill={node.color}
               opacity={accentOpacity}
+              clipPath={`url(#nc-${node.id})`}
             />
 
             {/* ── Type label ── */}
